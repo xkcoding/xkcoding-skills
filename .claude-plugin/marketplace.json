@@ -1,0 +1,22 @@
+{
+  "name": "xkcoding-skills",
+  "owner": {
+    "name": "Yangkai Shen",
+    "email": "xkcoding@gmail.com"
+  },
+  "metadata": {
+    "description": "Developer productivity skills - desktop packaging, design automation",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "xkcoding-skills",
+      "description": "Desktop app packaging and design automation skills",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./desktop-kit"
+      ]
+    }
+  ]
+}
