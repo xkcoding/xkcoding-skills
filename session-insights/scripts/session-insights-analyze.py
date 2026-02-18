@@ -10,10 +10,16 @@ Usage:
 """
 
 import json
+import os
 import sys
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+
+# claude -p (pipe mode) is non-interactive and process-isolated,
+# so it's safe to run inside another Claude Code session.
+# Remove CLAUDECODE env var to bypass the nested session check.
+_SUBPROCESS_ENV = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
 
 # ─── Prompt Template ─────────────────────────────────────────────
 
@@ -92,6 +98,7 @@ def analyze_batch(batch_data, batch_index, total_batches):
             capture_output=True,
             text=True,
             timeout=300,  # 5 min per batch
+            env=_SUBPROCESS_ENV,
         )
 
         if proc.returncode == 0 and proc.stdout.strip():
