@@ -6,19 +6,21 @@
 
 ## 当前 Skills
 
-### desktop-kit （开发中）
+### desktop-kit（MVP）
 
 将任意 Web App（React/Vue/静态页面）打包为 macOS 桌面客户端。
 
 **核心设计文档**：`desktop-kit/DESIGN.md` — 包含完整的设计思路、知识来源、架构决策和实现规划。该文档沉淀了从 Argus 项目中提炼的全部工程经验，**实现前务必先读此文档**。
 
-**知识来源**：Argus 项目（`/Users/yangkai.shen/code/xiaohongshu/argus`）— AIMI Multi-Agent 可视化调试平台，v0.3.1 生产级桌面应用。
+### session-insights（Stable）
 
-### session-insights
+分析 Claude Code 会话数据，生成带 Mermaid 图表的 Markdown 洞察报告。支持四种模式：概览、逐个详细、并行详细（`claude -p` 真并行）、后台详细。
 
-分析 Claude Code 会话数据，生成带 Mermaid 图表的 Markdown 洞察报告（时间线、工具分布、协作模式、亮点/痛点）。
-
-**结构**：`session-insights/SKILL.md`（Agent 指令）+ `session-insights/scripts/session-insights.py`（数据提取，纯 Python 标准库）。
+**结构**：
+- `session-insights/SKILL.md` — Agent 指令入口，含 AskUserQuestion 路由和分流逻辑
+- `session-insights/scripts/session-insights.py` — 数据提取（纯 Python 标准库）
+- `session-insights/scripts/session-insights-analyze.py` — 并行分析编排（ThreadPoolExecutor + `claude -p`）
+- `session-insights/references/parallel-prompt.md` — 并行模式执行指令
 
 ## 开发规范
 
