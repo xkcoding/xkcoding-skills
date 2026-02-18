@@ -7,34 +7,67 @@
 | Skill | 描述 | 状态 |
 |-------|------|------|
 | [desktop-kit](desktop-kit/) | 将任意 Web App 打包为 macOS 桌面客户端 | MVP |
-| [session-insights](session-insights/) | 分析 Claude Code 会话数据，生成 Mermaid 图表洞察报告 | MVP |
+| [session-insights](session-insights/) | 分析 Claude Code 会话数据，生成 Mermaid 图表洞察报告（支持并行分析） | MVP |
+
+## 前置要求
+
+- Python 3（标准库，无外部依赖）
+- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI 已安装
 
 ## 安装
 
-### 全局安装（所有项目可用）
+### 方式一：Plugin Marketplace（推荐）
+
+在 Claude Code 中运行：
+
+```bash
+/plugin marketplace add xkcoding/xkcoding-skills
+```
+
+然后安装插件：
+
+```bash
+/plugin install xkcoding-skills@xkcoding-skills
+```
+
+也可以直接告诉 Claude Code：
+
+> 请帮我安装 github.com/xkcoding/xkcoding-skills 中的 Skills
+
+### 方式二：手动安装（全局）
 
 ```bash
 git clone https://github.com/xkcoding/xkcoding-skills.git ~/xkcoding-skills
 
-# 安装你需要的 Skill（以 desktop-kit 为例）
+# 安装你需要的 Skill（以 session-insights 为例）
 mkdir -p ~/.claude/skills
-cp -r ~/xkcoding-skills/desktop-kit ~/.claude/skills/desktop-kit
+cp -r ~/xkcoding-skills/session-insights ~/.claude/skills/session-insights
 ```
 
-### 项目级安装（仅当前项目可用）
+### 方式三：手动安装（项目级）
 
 ```bash
 cd /path/to/your-project
 
 mkdir -p .claude/skills
-cp -r /path/to/xkcoding-skills/desktop-kit .claude/skills/desktop-kit
+cp -r /path/to/xkcoding-skills/session-insights .claude/skills/session-insights
 ```
 
-### 符号链接（适合本仓库开发者）
+### 方式四：符号链接（适合本仓库开发者）
 
 ```bash
-ln -s /path/to/xkcoding-skills/desktop-kit ~/.claude/skills/desktop-kit
+ln -s /path/to/xkcoding-skills/session-insights ~/.claude/skills/session-insights
 ```
+
+### 更新
+
+通过 Marketplace 安装的用户：
+
+1. 在 Claude Code 中运行 `/plugin`
+2. 切换到 **Marketplaces** 标签
+3. 选择 **xkcoding-skills** → **Update marketplace**
+
+手动安装的用户重新 `git pull && cp -r` 即可。
 
 ### 验证
 
@@ -47,9 +80,9 @@ xkcoding-skills/
 ├── .claude-plugin/
 │   └── marketplace.json         # Skills 注册清单
 ├── CLAUDE.md                    # Claude Code 项目指令
-├── README.md                    # ← 你在这里
+├── README.md                    # <- 你在这里
 │
-├── desktop-kit/                 # Skill: Web → macOS Desktop
+├── desktop-kit/                 # Skill: Web -> macOS Desktop
 │   ├── README.md                # Skill 详细文档
 │   ├── SKILL.md                 # Skill 入口（Agent 指令）
 │   ├── DESIGN.md                # 设计文档
@@ -60,7 +93,8 @@ xkcoding-skills/
 ├── session-insights/            # Skill: 会话洞察分析
 │   ├── README.md                # Skill 详细文档
 │   ├── SKILL.md                 # Skill 入口（Agent 指令）
-│   └── scripts/                 # 数据提取脚本
+│   ├── references/              # 并行模式指令等知识文档
+│   └── scripts/                 # 数据提取 + 并行分析脚本
 │
 └── openspec/                    # OpenSpec 变更管理
     └── changes/
@@ -99,8 +133,9 @@ xkcoding-skills/
 
 - [x] **desktop-kit MVP** — Wails 壳、图标、DMG、构建脚本
 - [ ] **desktop-kit P1** — Sparkle 自动更新、发布脚本、故障排查
-- [ ] **desktop-kit P2** — CHANGELOG → appcast、更多框架检测
+- [ ] **desktop-kit P2** — CHANGELOG -> appcast、更多框架检测
 - [x] **session-insights MVP** — 会话数据提取、Mermaid 报告生成、summary/detailed 模式
+- [x] **session-insights 并行分析** — 分批并行 + 后台执行 + 进度反馈
 
 ## License
 

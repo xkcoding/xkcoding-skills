@@ -314,6 +314,8 @@ def main():
     parser.add_argument("--last", type=int, default=None, help="Only analyze last N sessions")
     parser.add_argument("--depth", choices=["summary", "detailed"], default="summary",
                         help="Controls how much user input text to include")
+    parser.add_argument("--output-file", default=None,
+                        help="Save full JSON to file, print only summary to stdout (for Agent routing)")
     args = parser.parse_args()
 
     # ── Find project directory ──
@@ -436,8 +438,21 @@ def main():
         "sessions": sessions,
     }
 
-    # Output JSON to stdout
-    print(json.dumps(output, ensure_ascii=False, indent=2))
+    # Always save full JSON to file, only print summary to stdout
+    output_path = args.output_file or "/tmp/session-insights-raw.json"
+    with open(output_path, 'w', encoding='utf-8') as out:
+        json.dump(output, out, ensure_ascii=False, indent=2)
+
+    summary = {
+        "status": "complete",
+        "session_count": output["totals"]["session_count"],
+        "depth": output["depth"],
+        "project_name": output["project_name"],
+        "total_tool_calls": output["totals"]["tool_calls"],
+        "total_active_min": output["totals"]["total_active_min"],
+        "output_file": output_path,
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

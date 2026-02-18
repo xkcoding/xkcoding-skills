@@ -5,13 +5,13 @@
     "email": "237497819@qq.com"
   },
   "metadata": {
-    "description": "Developer productivity skills - desktop packaging, design automation",
+    "description": "Developer productivity skills for Claude Code",
     "version": "0.1.0"
   },
   "plugins": [
     {
       "name": "xkcoding-skills",
-      "description": "Desktop app packaging and design automation skills",
+      "description": "Developer productivity skills for Claude Code",
       "source": "./",
       "strict": false,
       "skills": [

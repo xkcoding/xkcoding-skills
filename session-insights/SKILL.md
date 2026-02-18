@@ -7,6 +7,23 @@ description: Analyze Claude Code sessions for a repo, generate Markdown reports 
 
 当用户调用此命令时，按照以下流程执行。脚本负责数据提取，Agent 负责语义分析和报告生成。
 
+## 执行流向
+
+```
+Step 0 (交互引导: 范围 + 分析模式) ← AskUserQuestion 两个问题
+  ↓
+Step 1 (session-insights.py → 数据保存到文件 → 终端仅显示摘要)
+  ↓
+Step 2 (按 Step 0 的分析模式直接分流)
+  ↓
+  +--- 概览 / 逐个详细 ----→ Step 3 (读取 JSON + 分析) → Step 4 → Step 5
+  |
+  +--- 并行详细 -----------→ session-insights-analyze.py (真并行)
+  |                              → 读取 chapter3.md + JSON → 生成全局章节 → Step 4 → Step 5
+  |
+  +--- 后台详细 -----------→ Task(run_in_background) 包裹上述并行流程 → 结束
+```
+
 ## Script Directory
 
 **Important**: All scripts are located in the `scripts/` subdirectory of this skill.
@@ -20,60 +37,103 @@ description: Analyze Claude Code sessions for a repo, generate Markdown reports 
 | Script | Purpose |
 |--------|---------|
 | `scripts/session-insights.py` | 从 `~/.claude/projects/` 提取会话 JSONL 数据，输出结构化 JSON |
+| `scripts/session-insights-analyze.py` | 并行分析编排：分批 + `claude -p` 真并行 + 拼装第三章 |
 
 ## Step 0: 交互引导
 
-使用 `AskUserQuestion` 向用户确认选项（一次性问两个问题）：
+调用 `AskUserQuestion` 工具，**精确使用以下参数**：
 
-**问题 1 - 分析范围**（header: "范围"）:
-- "最近 5 个会话 (Recommended)" — 快速概览，适合日常回顾
-- "最近 10 个会话" — 中等范围，覆盖近期工作
-- "最近 20 个会话" — 较完整分析
-- "全部会话" — 完整分析，大项目可能较慢
+```json
+{
+  "questions": [
+    {
+      "question": "要分析多少个会话？",
+      "header": "范围",
+      "multiSelect": false,
+      "options": [
+        {"label": "最近 5 个 (Recommended)", "description": "快速概览，适合日常回顾"},
+        {"label": "最近 10 个", "description": "中等范围，覆盖近期工作"},
+        {"label": "最近 20 个", "description": "较完整分析"},
+        {"label": "全部会话", "description": "完整分析，大项目可能较慢"}
+      ]
+    },
+    {
+      "question": "选择分析模式",
+      "header": "模式",
+      "multiSelect": false,
+      "options": [
+        {"label": "概览报告 (Recommended)", "description": "统计总览 + 时间线 + 工具分布 + 文件分类"},
+        {"label": "逐个详细分析", "description": "串行处理每个会话，适合 ≤10 会话"},
+        {"label": "并行详细分析", "description": "分批并行处理，适合 10+ 会话，可看实时进度"},
+        {"label": "后台详细分析", "description": "后台运行，你可以继续其他工作"}
+      ]
+    }
+  ]
+}
+```
 
-**问题 2 - 分析深度**（header: "深度"）:
-- "概览 (summary) (Recommended)" — 统计总览 + 时间线 + 工具分布 + 文件分类。不展开每个会话的详细时序
-- "详细 (detailed)" — 以上全部 + 每个会话的详细交互分析（时序图、关键指令精选表）+ 亮点/痛点/跨项目经验
+如果用户在调用时已提供明确参数（如 `--last 5 --depth detailed`），可以跳过引导。
 
-如果用户在调用时已经提供了明确参数（如 `/session-insights --last 5 --depth detailed`），可以跳过引导。
+**后台参数**：如果用户包含 `--background` 或 `--bg`，分析模式自动设为「后台详细分析」。
 
 ## Step 1: 运行数据提取脚本
 
-脚本位于 `${SKILL_DIR}/scripts/session-insights.py`，输出结构化 JSON。
+脚本位于 `${SKILL_DIR}/scripts/session-insights.py`。
 
-根据用户选择构造命令：
+运行脚本（脚本会自动将完整数据保存到文件，终端只显示摘要）：
 
 ```bash
-# 自动检测项目（用 CWD）
-python3 ${SKILL_DIR}/scripts/session-insights.py --last N --depth summary|detailed
-
-# 如果自动检测失败，用项目关键词
-python3 ${SKILL_DIR}/scripts/session-insights.py "project-keyword" --last N --depth summary|detailed
+python3 ${SKILL_DIR}/scripts/session-insights.py --last N --depth DEPTH
 ```
 
-参数映射：
+**--last 参数**（来自问题 1）：
 - "最近 5 个会话" → `--last 5`
 - "最近 10 个会话" → `--last 10`
 - "最近 20 个会话" → `--last 20`
 - "全部会话" → 不加 `--last`
 
-脚本会输出 JSON 到 stdout，包含：
+**--depth 参数**（来自问题 2）：
+- "概览报告" → `--depth summary`
+- "逐个详细分析"、"并行详细分析"、"后台详细分析" → `--depth detailed`
+
+如果自动检测项目失败，加关键词参数。
+
+脚本输出摘要（约 100 字节），**立即进入 Step 2**。
+
+## Step 2: 按分析模式分流
+
+根据用户在 **Step 0 问题 2** 中选择的分析模式，执行对应分支：
+
+**用户选了「概览报告」或「逐个详细分析」**→ 继续到 Step 3。
+
+**用户选了「并行详细分析」**→ 执行并行分析流程：
+
+1. 运行并行分析脚本（脚本内部用 `claude -p` 真并行，Agent 只需等待）：
+   ```bash
+   python3 ${SKILL_DIR}/scripts/session-insights-analyze.py
+   ```
+2. 脚本完成后，使用 Read 工具读取 `/tmp/session-insights-chapter3.md`（第三章内容）
+3. 使用 Read 工具读取 `/tmp/session-insights-raw.json`（完整数据用于生成其他章节）
+4. Agent 生成全局章节（一、二、四~十一），将第三章插入对应位置，按 Step 4 格式拼装完整报告
+5. 跳到 Step 5 输出
+
+**用户选了「后台详细分析」**→ 将上述并行分析流程包裹在 `Task(run_in_background: true)` 中执行，Main Agent 立即返回提示信息和预期输出路径。
+
+## Step 3: 语义分析（Agent 核心职责）
+
+> **如果 Step 2 选择了并行模式，DO NOT 执行此步骤。** 并行模式的 per-session 分析由 parallel-prompt.md 中的 Sub-Agent 完成。
+
+**这是关键步骤——不要机械输出数据，要用自己的理解来分析和提炼。**
+
+**首先，读取 Step 1 保存的 JSON 数据文件 `/tmp/session-insights-raw.json`。** JSON 结构包含：
 - `totals` — 汇总统计（会话数、消息数、工具调用数、活跃时间等）
 - `all_tools` — 工具使用频次排行
 - `all_sub_agents` — 子 Agent 类型分布
 - `all_files_edited` — 修改的文件列表（含编辑频次）
 - `all_files_written` — 创建的文件列表
-- `sessions[]` — 每个会话的详细数据：
-  - 时间范围、活跃时间/百分比、空闲段
-  - 用户输入（已清洗，精选摘要）、Agent 输出摘要
-  - 工具使用 top 10、子 Agent 类型、模型分布
-  - 修改的文件（含频次）、git commits、使用的 skills
+- `sessions[]` — 每个会话的详细数据（时间范围、用户输入、工具使用 top 10、子 Agent 类型、文件变更、git commits 等）
 
-## Step 2: 语义分析（Agent 核心职责）
-
-**这是关键步骤——不要机械输出数据，要用自己的理解来分析和提炼。**
-
-读取 JSON 数据后，Agent 需要：
+读取完整数据后，Agent 需要：
 
 1. **理解每个会话的主题**：从 `user_inputs` 提炼出这个会话在做什么（而非列出每条消息）
 2. **识别开发阶段**：项目经历了哪些阶段（搭建、开发、调试、优化...）
@@ -84,7 +144,7 @@ python3 ${SKILL_DIR}/scripts/session-insights.py "project-keyword" --last N --de
 7. **识别痛点 (Pain Points)**：做得不好的地方——反复修改、走弯路、效率低的交互模式、理解偏差等
 8. **形成可复用经验**：把亮点抽象为 pattern（其他项目可以复用），把痛点转化为具体改进建议
 
-## Step 3: 生成 Markdown 报告
+## Step 4: 生成 Markdown 报告
 
 生成一份中文 Markdown 文档。**所有文字都用 Agent 自己的理解来写，不机械复制数据。**
 
@@ -337,7 +397,7 @@ flowchart TD
 
 ---
 
-## Step 4: 输出
+## Step 5: 输出
 
 将生成的 Markdown 写入 `./docs/session-insights-{project-name}-{YYYYMMDD-HHmmss}.md`。
 
