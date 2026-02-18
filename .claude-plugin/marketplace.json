@@ -10,12 +10,20 @@
   },
   "plugins": [
     {
-      "name": "xkcoding-skills",
-      "description": "Developer productivity skills for Claude Code",
+      "name": "dev-skills",
+      "description": "Development skills — packaging, building, scaffolding",
       "source": "./",
       "strict": false,
       "skills": [
-        "./desktop-kit",
+        "./desktop-kit"
+      ]
+    },
+    {
+      "name": "productivity-skills",
+      "description": "Productivity skills — insights, review, workflow optimization",
+      "source": "./",
+      "strict": false,
+      "skills": [
         "./session-insights"
       ]
     }

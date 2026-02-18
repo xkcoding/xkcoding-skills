@@ -27,8 +27,20 @@
 然后安装插件：
 
 ```bash
-/plugin install xkcoding-skills@xkcoding-skills
+# 安装全部
+/plugin install dev-skills@xkcoding-skills
+/plugin install productivity-skills@xkcoding-skills
+
+# 或按需安装
+/plugin install productivity-skills@xkcoding-skills
 ```
+
+### 可用插件
+
+| 插件 | 说明 | 包含 Skills |
+|------|------|-------------|
+| **dev-skills** | 开发技能 — 打包、构建、脚手架 | [desktop-kit](desktop-kit/) |
+| **productivity-skills** | 效能技能 — 洞察、复盘、工作流优化 | [session-insights](session-insights/) |
 
 也可以直接告诉 Claude Code：
 

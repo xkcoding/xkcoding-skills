@@ -30,7 +30,7 @@
 然后安装插件：
 
 ```bash
-/plugin install xkcoding-skills@xkcoding-skills
+/plugin install productivity-skills@xkcoding-skills
 ```
 
 也可以直接告诉 Claude Code：
