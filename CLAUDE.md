@@ -14,6 +14,12 @@
 
 **知识来源**：Argus 项目（`/Users/yangkai.shen/code/xiaohongshu/argus`）— AIMI Multi-Agent 可视化调试平台，v0.3.1 生产级桌面应用。
 
+### session-insights
+
+分析 Claude Code 会话数据，生成带 Mermaid 图表的 Markdown 洞察报告（时间线、工具分布、协作模式、亮点/痛点）。
+
+**结构**：`session-insights/SKILL.md`（Agent 指令）+ `session-insights/scripts/session-insights.py`（数据提取，纯 Python 标准库）。
+
 ## 开发规范
 
 - Skill 入口文件必须是 `SKILL.md`，含 YAML frontmatter（name + description）

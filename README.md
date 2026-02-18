@@ -7,6 +7,7 @@
 | Skill | 描述 | 状态 |
 |-------|------|------|
 | [desktop-kit](desktop-kit/) | 将任意 Web App 打包为 macOS 桌面客户端 | MVP |
+| [session-insights](session-insights/) | 分析 Claude Code 会话数据，生成 Mermaid 图表洞察报告 | MVP |
 
 ## 安装
 
@@ -56,6 +57,11 @@ xkcoding-skills/
 │   ├── scripts/                 # 工具脚本
 │   └── references/              # 知识文档
 │
+├── session-insights/            # Skill: 会话洞察分析
+│   ├── README.md                # Skill 详细文档
+│   ├── SKILL.md                 # Skill 入口（Agent 指令）
+│   └── scripts/                 # 数据提取脚本
+│
 └── openspec/                    # OpenSpec 变更管理
     └── changes/
 ```
@@ -94,6 +100,7 @@ xkcoding-skills/
 - [x] **desktop-kit MVP** — Wails 壳、图标、DMG、构建脚本
 - [ ] **desktop-kit P1** — Sparkle 自动更新、发布脚本、故障排查
 - [ ] **desktop-kit P2** — CHANGELOG → appcast、更多框架检测
+- [x] **session-insights MVP** — 会话数据提取、Mermaid 报告生成、summary/detailed 模式
 
 ## License
 
