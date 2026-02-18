@@ -7,7 +7,7 @@
 | Skill | 描述 | 状态 |
 |-------|------|------|
 | [desktop-kit](desktop-kit/) | 将任意 Web App 打包为 macOS 桌面客户端 | MVP |
-| [session-insights](session-insights/) | 分析 Claude Code 会话数据，生成 Mermaid 图表洞察报告（支持并行分析） | MVP |
+| [session-insights](session-insights/) | 分析 Claude Code 会话数据，生成 Mermaid 图表洞察报告（支持并行分析） | Stable |
 
 ## 前置要求
 
