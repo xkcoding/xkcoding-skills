@@ -114,7 +114,7 @@ python3 ${SKILL_DIR}/scripts/session-insights.py --last N --depth DEPTH
    ```
 2. 脚本完成后，使用 Read 工具读取 `/tmp/session-insights-chapter3.md`（第三章内容）
 3. 使用 Read 工具读取 `/tmp/session-insights-raw.json`（完整数据用于生成其他章节）
-4. Agent 生成全局章节（一、二、四~十一），将第三章插入对应位置，按 Step 4 格式拼装完整报告
+4. Agent 生成全局章节（一、二、四~十一），将第三章插入对应位置，按 Step 4 格式拼装完整报告。**标题级别约束**：chapter3.md 中章节标题应为 `## 三、各会话详情`（h2），各会话标题应为 `### 会话 N`（h3），与其他章节层级一致。如发现级别偏低（如 `###`/`####`），拼装时需提升一级
 5. 跳到 Step 5 输出
 
 **用户选了「后台详细分析」**→ 将上述并行分析流程包裹在 `Task(run_in_background: true)` 中执行，Main Agent 立即返回提示信息和预期输出路径。

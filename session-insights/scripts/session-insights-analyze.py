@@ -31,9 +31,9 @@ BATCH_PROMPT = """你是 session-insights 的会话分析 Sub-Agent。请分析�
 
 ## 输出格式
 
-对每个会话生成以下结构（不要包含「三、各会话详情」章节标题，直接从 #### 开始）：
+对每个会话生成以下结构（不要包含「三、各会话详情」章节标题，直接从 ### 开始）：
 
-#### 会话 N：{{日期}} {{主题概括}}
+### 会话 N：{{日期}} {{主题概括}}
 
 **核心交互时序图**
 
@@ -145,7 +145,7 @@ def generate_fallback(batch_data):
     for sess in batch_data:
         inputs = sess.get("user_inputs", [])
         topic = inputs[0][:100] if inputs else "未知主题"
-        lines.append(f"#### 会话：{sess.get('time_start', '?')} — {topic}")
+        lines.append(f"### 会话：{sess.get('time_start', '?')} — {topic}")
         lines.append(
             f"**统计**：用户消息 {sess.get('user_count', 0)} | "
             f"工具调用 {sess.get('tool_calls', 0)} | "
@@ -222,7 +222,7 @@ def main():
     print(f"✓ 所有批次分析完成 (总耗时 {elapsed_total}s)", file=sys.stderr)
 
     # ── Assemble chapter 3 ──
-    parts = ["### 三、各会话详情\n"]
+    parts = ["## 三、各会话详情\n"]
     for i in sorted(results.keys()):
         parts.append(results[i]["content"])
 
