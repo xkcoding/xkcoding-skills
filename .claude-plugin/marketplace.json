@@ -11,11 +11,12 @@
   "plugins": [
     {
       "name": "dev-skills",
-      "description": "Development skills — packaging, building, scaffolding",
+      "description": "Development skills — packaging, building, scaffolding, environment setup",
       "source": "./",
       "strict": false,
       "skills": [
-        "./desktop-kit"
+        "./desktop-kit",
+        "./agent-team-setup"
       ]
     },
     {

@@ -12,6 +12,15 @@
 
 **核心设计文档**：`desktop-kit/DESIGN.md` — 包含完整的设计思路、知识来源、架构决策和实现规划。该文档沉淀了从 Argus 项目中提炼的全部工程经验，**实现前务必先读此文档**。
 
+### agent-team-setup（Stable）
+
+一条命令完成 Claude Code Agent Teams 环境准备：开启实验特性、配置显示模式、安装依赖、验证环境。
+
+**结构**：
+- `agent-team-setup/SKILL.md` — Agent 指令入口，含 AskUserQuestion 引导和子命令路由
+- `agent-team-setup/scripts/doctor.sh` — 环境诊断脚本（检测 Claude Code、tmux、iTerm2、settings.json）
+- `agent-team-setup/references/agent-teams-guide.md` — Agent Teams 使用指南和最佳实践
+
 ### session-insights（Stable）
 
 分析 Claude Code 会话数据，生成带 Mermaid 图表的 Markdown 洞察报告。支持四种模式：概览、逐个详细、并行详细（`claude -p` 真并行）、后台详细。
