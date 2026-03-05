@@ -168,7 +168,9 @@ brew install tmux
 如果用户在 iTerm2 中且 `it2_cli_installed` 为 false，提示：
 ```
 iTerm2 检测到，但 it2 CLI 未安装。
-安装方式: brew install mkusaka/it2/it2
+安装方式（二选一）:
+  uv tool install it2     # 推荐
+  pip install it2
 然后在 iTerm2 → Settings → General → Magic → 勾选 Enable Python API
 ```
 

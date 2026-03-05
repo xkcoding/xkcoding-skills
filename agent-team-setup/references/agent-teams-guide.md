@@ -22,7 +22,7 @@ Agent Teams 让你协调多个 Claude Code 实例协同工作。一个会话作�
 | 模式 | 说明 | 要求 |
 |------|------|------|
 | **in-process** | 所有 teammate 在主终端运行 | 无额外依赖 |
-| **tmux** | 每个 teammate 独立分屏面板 | tmux 或 iTerm2 + it2 CLI |
+| **tmux** | 每个 teammate 独立分屏面板 | tmux 或 iTerm2 + it2 CLI (`uv tool install it2`) |
 | **auto**（默认） | tmux 会话内自动分屏，否则 in-process | 无 |
 
 ### 操作快捷键（in-process 模式）
