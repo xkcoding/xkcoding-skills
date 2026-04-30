@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Developer productivity skills for Claude Code",
-    "version": "0.3.0"
+    "version": "0.3.1"
   },
   "plugins": [
     {
