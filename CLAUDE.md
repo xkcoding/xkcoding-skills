@@ -31,6 +31,21 @@
 - `session-insights/scripts/session-insights-analyze.py` — 并行分析编排（ThreadPoolExecutor + `claude -p`）
 - `session-insights/references/parallel-prompt.md` — 并行模式执行指令
 
+### skill-audit（New）
+
+审查 Agent Skill/Prompt 质量，检测事实与推断混淆、行为锚定、过度详细、排他性分类等反模式。
+
+**结构**：
+- `skill-audit/SKILL.md` — 审计框架，含五项检查、审计流程和报告模板
+
+### dark-luxury-editorial（New）
+
+把旅行文本/路书/游记转成暗黑奢华杂志风（Kinfolk-inspired）的 React + Tailwind 编辑型网页。覆盖从 intent → 行程规划 → 内容改写 → 视觉实现 → 图片/BGM 素材 → QA 全流程。
+
+**结构**：
+- `dark-luxury-editorial/SKILL.md` — 入口路由，按任务形态（intent / 已有文本 / 视觉回归 / 素材 / 文案 / 实现 patterns / 产品演进）分流加载 references
+- `dark-luxury-editorial/references/` — 8 个分主题文档：benchmark 视觉基线、brief→site 工作流、intent→行程规划、图片与音频管线、实现 recipes、editorial 文案、failure modes/QA、产品演进
+
 ## 开发规范
 
 - Skill 入口文件必须是 `SKILL.md`，含 YAML frontmatter（name + description）
