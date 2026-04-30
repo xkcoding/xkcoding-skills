@@ -52,19 +52,24 @@ Examples:
 - user says the pictures or music feel wrong
   - read `references/image-and-audio-pipeline.md`
 
-## Soul rules
+## Non-negotiables
 
-These are the rules that, if broken, the page stops belonging to the benchmark family — even when everything else is technically correct. They describe *what kind of page this is*, not how to implement it. Concrete recipes (Tailwind classes, overlay opacity, layout grids) live in `references/implementation-recipes.md`.
-
-1. **Project boundaries.** Don't overwrite a different destination project unless the user explicitly asks to replace it.
-2. **Hero and the next section are one composition.** Continuity comes from shared imagery and masking; if the second screen reads as a separate slab, the cover has failed.
-3. **Real, semantically-fit imagery is the floor.** A page with text-only dark shells, flat SVGs, muddy stock, or factually-correct-but-visually-flat photos doesn't belong to this family. Editorial beauty and semantic fit are both required, not either-or.
-4. **Copy sounds like a human travel companion.** Not a planner console, audit log, or system report. Concrete tags (`place` / `food`) over abstract labels; first-person warmth over template phrasing.
-5. **Backstage rigor, frontstage warmth.** Map validation, weather adaptation, template selection are real backstage work for 0-to-1 planning — but they should not surface as visible dashboards, KPI blocks, validation panels, or repeated module shells. That's what tips a page over into AI UI.
-6. **Hero readability is non-optional.** Title and supporting copy must be clearly legible against the cover, and the title block must read as optically centered. If the photo can't carry the text, strengthen the contrast layer or rewrite the label — don't ship low-contrast or off-center as "good enough". See implementation-recipes section 1-3 for the layered overlay pattern and centering recipe.
-7. **Simplify or omit before shipping a weak version.** If the route loop, timeline, or vinyl player can't reach benchmark quality, drop the module. A clean page missing a feature beats a page with a broken signature interaction.
-8. **Mobile is a first-class review surface.** Not a later cleanup pass.
-9. **A cold-start ships only with evidence.** Public deploy URL plus browser-verified visual review, or a clearly documented blocker. No "looks good in dev".
+1. Do not overwrite a different destination project unless the user explicitly asks to replace it.
+2. Treat the Hero and the next section as one continuous composition, not two slabs.
+3. Blur belongs to the shared background layer, not the visible Hero image.
+4. Existing benchmark-family visual rules are binding unless the user explicitly changes them.
+5. Mobile is a first-class review surface, not a later cleanup pass.
+6. User-facing copy must sound like a caring human travel companion, not a planner console, audit log, or system report.
+7. Tags are only valid when they are concrete `place / destination` or `food`.
+8. Real imagery is mandatory for a passing route-guide page; text-only dark shells, flat SVGs, muddy thumbnails, or semantically wrong images do not count.
+9. A factually correct but visually flat image still fails; semantic fit and editorial beauty are both required.
+10. Music UI must follow the real media element state; do not fake playback visually.
+11. For 0-to-1 route planning, map validation and weather adaptation are mandatory backstage inputs, but they should not surface as stiff visible modules unless the user asks.
+12. Do not invent dashboard cards, KPI blocks, validation panels, or repeated generic module shells that push the page toward AI UI.
+13. If the route-loop, timeline, or vinyl player cannot reach benchmark quality, simplify or omit it instead of shipping a weak version.
+14. A cold-start validation is not complete without a public deploy URL or a clearly evidenced blocker, plus browser-verified visual review.
+15. **Hero text contrast is mandatory.** The foreground title and supporting copy must always be clearly legible against the Hero background image. If the photo is light, mid-tone, or color-conflicted with the text color, apply one of: `text-shadow` on the text, a `bg-black/40` or stronger overlay on the image layer, or a bottom-anchored gradient from `black/70` to transparent. Do not leave low-contrast text on the assumption that the photo will naturally be dark enough.
+16. **Hero title must be optically centered.** If the title uses a three-column layout (`left-node · center-dot · right-node`), the dot column must be the true horizontal axis and both side columns must stretch symmetrically so the entire title block appears centered on the page. Adjust `tracking`, `font-size` (via clamp or relative units), or rewrite the label text to achieve balance. Never leave a noticeably off-center Hero title as-is.
 
 ## Choose the path
 

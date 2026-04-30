@@ -50,8 +50,8 @@ Do not:
 - center each Hero line separately instead of aligning one optical stack
 - let the Hero cluster sit too low on mobile
 - accept a cover where text readability is poor but can supposedly be fixed later
-- ship the page if the title foreground text is low-contrast against the background image — the cover loses presence and the page reads as a draft
-- ship the page if the Hero title block appears visually off-center — the imbalance is the first thing the eye catches and it pulls the whole composition down
+- ship the page if the title foreground text is low-contrast against the background image — **this is a hard fail**
+- ship the page if the Hero title block appears visually off-center — **this is a hard fail**
 - compensate for low contrast by making text smaller or thinner
 - compensate for off-center by shifting individual text spans instead of fixing the grid structure
 

@@ -46,7 +46,7 @@ Use these as starting patterns, not rigid templates. Keep the structure, then tu
       className="h-full w-full object-cover opacity-[0.82]"
       referrerPolicy="no-referrer"
     />
-    {/* Contrast overlay — start at bg-black/40 and adjust upward if the photo is bright or color-conflicts with the title. Don't drop below bg-black/35 unless you have a specifically dark cover and verify readability in browser. */}
+    {/* ⚠️ Contrast overlay — MANDATORY. Never omit or weaken below bg-black/35. */}
     <div className="absolute inset-0 bg-black/40" />
     <div className="absolute inset-x-0 bottom-0 h-80 bg-gradient-to-t from-[#0a0f0c]/80 to-transparent" />
   </div>
@@ -69,17 +69,27 @@ Critical reading:
 - do not begin `main` with an opaque slab; the first content section should sit over the same blurred cover world
 - if the page looks like a flat black / green background after the Hero, the two-layer composition has failed
 
-### Contrast layering
+### Contrast rules (non-negotiable)
 
-The Hero title (`white/95`) must read clearly against the cover at any viewport. Three layers usually carry that load together — drop one and you'll typically need to compensate harder elsewhere:
+The Hero foreground text (`white/95`) must remain clearly readable against the background image at all times.
 
-1. full-bleed image overlay (`bg-black/40` is the default starting point)
-2. bottom anchor gradient (`bg-gradient-to-t from-[#0a0f0c]/80 to-transparent`, h-80 or taller) so the lower content fades into the page floor
-3. a soft text shadow on the title (`drop-shadow-[0_2px_20px_rgba(0,0,0,0.6)]`)
+Minimum required layers — all three must be present:
 
-For a bright or mid-tone cover, raise the overlay (`bg-black/55`+) and consider a centred radial vignette: `bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(0,0,0,0.45)_100%)]`. Fix contrast at the image layer — shrinking or thinning the text to "make it work" reads as a workaround, and the title still loses presence.
+1. `bg-black/40` full-bleed overlay directly on the Hero image div
+2. `bg-gradient-to-t from-[#0a0f0c]/80 to-transparent` bottom anchor gradient (h-80 or taller)
+3. `text-shadow: 0 2px 20px rgba(0,0,0,0.6)` (or equivalent Tailwind: `drop-shadow-[0_2px_20px_rgba(0,0,0,0.6)]`) on the title text
 
-If you're tempted to ship a cover where the title only *almost* reads, that's the failure signal. Either the photo is wrong for this title, or the overlay stack needs another pass.
+If the chosen photo is unusually light or has bright mid-tones:
+
+- raise the overlay to `bg-black/55`
+- add a centre-focused radial dark vignette: `bg-[radial-gradient(ellipse_at_center,transparent_30%,rgba(0,0,0,0.45)_100%)]`
+- do not reduce text opacity as a substitute for fixing contrast at the image layer
+
+Do not:
+
+- ship a Hero where the title blends into the background even slightly
+- treat this as an aesthetic choice — low contrast fails the QA pass rule
+- compensate by making text smaller or thinner instead of fixing the overlay
 
 ## 2. Hero title with the dot as the optical axis
 
@@ -106,9 +116,9 @@ If you're tempted to ship a cover where the title only *almost* reads, that's th
 </div>
 ```
 
-### Centering the title block
+### Centering rules (non-negotiable)
 
-The Hero title needs to read as optically centred at every viewport — that's how the cover stays balanced. Visual centring isn't the same as geometric centring: when a `left · center · right` title has uneven character counts, the dot drifts off-axis even though the columns are technically equal. Three patterns recover the balance.
+The Hero title block must be optically centered on every screen width. This is a hard visual requirement, not a best-effort guideline.
 
 **When both place names have different character counts:**
 

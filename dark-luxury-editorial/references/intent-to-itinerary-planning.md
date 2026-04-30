@@ -6,7 +6,9 @@ Use this reference when the user does not already have a finished route guide an
 
 - intake and template selection
   - `1. Intake checklist`
-  - `1.5. Template selection`
+  - `1.5. Template selection by user profile`
+  - `1.6. Template resolution rules`
+  - `1.7. Template selection matrix`
   - `1.8. Planning artifact contract`
 - research and recommendation quality
   - `2. Research order`
@@ -128,13 +130,35 @@ Only ask when a missing input would materially change the route shape, for examp
 
 If the user is unavailable, infer conservatively and mark the assumption.
 
-## 1.5. Template selection
+## 1.5. Template selection by user profile
 
-Pick one `primary template` and an optional `overlay` before searching. The primary decides retrieval buckets, route scoring bias, daily density, and which supporting sections deserve weight. The overlay adjusts pacing without erasing the primary's logistics shape.
+Before searching, classify the trip into a working template.
 
-### Profile axes to read off the brief
+### Core profile axes
 
-Transport mode (self-drive / air-rail+transit / walk-heavy), rhythm (staycation / balanced / special-forces), party (solo / couple / friends / family / elders), lodging (one-base / moving), priority bias (food / scenery / photo / culture / mixed). These are inputs to template choice, not outputs to display.
+- transport mode
+  - self-drive
+  - air / rail arrival + local taxi / transit
+  - local walk-heavy
+- rhythm
+  - staycation / vacation
+  - balanced
+  - special-forces
+- party
+  - solo
+  - couple
+  - friends
+  - family
+  - elders-included
+- lodging pattern
+  - one-base
+  - two-base or moving route
+- priority bias
+  - food
+  - scenery
+  - photography
+  - culture
+  - mixed
 
 ### Common planning templates
 
@@ -207,20 +231,78 @@ Optimize for:
 - predictable transfers
 - fewer hard transitions per half day
 
-Retrieval, filtering, and route scoring follow the chosen template.
+Retrieval, filtering, and route scoring should follow the chosen template.
 
-### How to resolve when signals point in different directions
+## 1.6. Template resolution rules
 
-Treat these as priority order, not a rigid lookup table — read the brief, weigh the signals, decide.
+Do not treat template choice as decorative labeling.
+Pick:
 
-1. **Safety, physical burden, mobility** dominate everything else. If elders, young children, stroller, or heavy luggage are real constraints, apply `E` — as primary when it shapes the whole trip, as overlay when it just caps pacing on top of another template.
-2. **Fixed transport / lodging structure** is the next strongest signal. Self-drive crossing multiple clusters → `A`. Flight or rail into a single city base → `B`. Resort / lake / island stay being the point of the trip → `C` (and `C` should win over `B` when the hotel radius is the reason for going).
-3. **Declared rhythm** comes after structure. Short window with strong completion goals → `D`, even if transport would otherwise suggest `B`. Relaxed weekend → favor `C` or balanced, not `D`.
-4. **Interest bias** (food / scenery / photo / culture) shapes retrieval within the chosen template, not the template itself.
+- one `primary template`
+- one optional `overlay`
 
-Defaults when the brief is vague: `balanced` rhythm, one-base lodging, no `D` unless the user explicitly signals efficiency. For a 1-2 day trip with spread-out geography, asking the user "staycation or special-forces" is one of the few clarifying questions that earn their keep.
+The primary template decides:
 
-When the case is mixed, declare it explicitly in the planning artifact, e.g. `primary: B / overlay: E`.
+- retrieval buckets
+- route scoring bias
+- daily density
+- which supporting sections deserve more weight
+
+The overlay adjusts burden and pacing, but should not erase the primary logistics shape.
+
+Use these default resolution rules:
+
+- if the trip is self-drive and the route crosses `2+` suburban / scenic clusters,
+  choose `A. Self-drive loop` as primary even when the rhythm is relaxed
+- if arrival and departure are by flight or rail and most nights stay in one city base,
+  choose `B. Flight / rail arrival hub-and-spoke` as primary unless the trip is clearly hotel-centered
+- if the hotel / resort / lake / island stay is itself the trip's main reason,
+  choose `C. Staycation / resort-centered` even if there is one arrival transfer day
+- if the usable time window is short and the user has strong completion goals,
+  choose `D. Special-forces / high-density` even when arriving by rail or plane
+- if elders, children, stroller, low mobility, or heavy luggage meaningfully constrain movement,
+  apply `E. Family / elders / low-burden` as primary or as an overlay that caps pacing
+
+Conflict priority:
+
+1. safety, physical burden, and mobility constraints
+2. fixed transport / lodging structure
+3. declared rhythm
+4. interest bias
+
+Default tie-breakers:
+
+- `E` can overlay `A`, `B`, `C`, or `D`, and should slow them down rather than disappear
+- `C` beats `B` when the one-base hotel radius is the point of the trip
+- `B` beats `C` when airport / station friction clearly shapes the first and last day
+- `D` can sharpen `A` or `B`, but should not override `E`
+
+If the case is mixed, declare it explicitly, for example:
+
+- `primary: B. Flight / rail arrival hub-and-spoke`
+- `overlay: E. Family / elders / low-burden`
+
+## 1.7. Template selection matrix
+
+Use this quick matrix before retrieval:
+
+- self-drive + multiple outer clusters + parking matters
+  - prefer `A. Self-drive loop`
+- air / rail arrival + one hotel base + city districts
+  - prefer `B. Flight / rail arrival hub-and-spoke`
+- relaxed weekend + one resort / lake / island / boutique-hotel radius
+  - prefer `C. Staycation / resort-centered`
+- short window + many must-hit POIs + explicit efficiency goal
+  - prefer `D. Special-forces / high-density`
+- elders / children / stroller / low-mobility constraints
+  - prefer `E. Family / elders / low-burden` as primary or overlay
+
+Useful fallback rules:
+
+- if the user says "想多玩几个点" but also wants "松弛", resolve toward `balanced` unless the time window is objectively short
+- if the user gives no rhythm preference, default to `balanced`, not `special-forces`
+- if there is no hotel yet, default to one-base unless the geography strongly argues for moving hotels
+- if the trip is only `1-2` days and the destination is spread out, ask whether the user wants `staycation` or `special-forces`; this is one of the few good clarifying questions
 
 ## 1.8. Planning artifact contract
 
