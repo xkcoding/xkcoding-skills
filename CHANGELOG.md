@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-30
+
+### Added
+
+- **skill-audit**: 新增 Agent Skill/Prompt 质量审计 skill
+  - 五项反模式检查：事实/推断混淆、行为锚定、过度详细、排他性分类、自由度匹配
+  - 注册到 `productivity-skills` 插件组
+- **dark-luxury-editorial**: 新增暗黑奢华杂志风网页生成 skill
+  - 把旅行文本/路书/游记转成 React + Tailwind 编辑型网页
+  - 8 个分主题 references（benchmark 视觉基线、brief→site 工作流、intent→行程规划、图片与音频管线、实现 recipes、editorial 文案、failure modes/QA、产品演进）
+  - 经过 skill-audit 质量调优：non-negotiables 16 条 → 9 条 soul rules，决策矩阵从 4 层嵌套合并为优先级排序，关键约束词软化并补充 why
+  - 注册到新增的 `design-skills` 插件组
+
 ## [0.2.0] - 2026-03-06
 
 ### Added

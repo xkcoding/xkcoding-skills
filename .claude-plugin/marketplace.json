@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Developer productivity skills for Claude Code",
-    "version": "0.2.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
@@ -25,7 +25,17 @@
       "source": "./",
       "strict": false,
       "skills": [
-        "./session-insights"
+        "./session-insights",
+        "./skill-audit"
+      ]
+    },
+    {
+      "name": "design-skills",
+      "description": "Design & editorial skills — visual aesthetics, content-to-web transformation",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./dark-luxury-editorial"
       ]
     }
   ]
