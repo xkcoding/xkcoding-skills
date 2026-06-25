@@ -46,6 +46,15 @@
 - `dark-luxury-editorial/SKILL.md` — 入口路由，按任务形态（intent / 已有文本 / 视觉回归 / 素材 / 文案 / 实现 patterns / 产品演进）分流加载 references
 - `dark-luxury-editorial/references/` — 8 个分主题文档：benchmark 视觉基线、brief→site 工作流、intent→行程规划、图片与音频管线、实现 recipes、editorial 文案、failure modes/QA、产品演进
 
+### md-image-rehost（Stable）
+
+抽取 Markdown 里的图片，sharp 压缩后转存到自有阿里云 OSS/CDN（ali-oss），就地替换链接。远程外链 + 本地图默认都传；GIF 取首帧（适配 OSS 原图保护样式）；对象键镜像源文件位置。**唯一依赖 Node.js 的 skill**，首次需 `npm install`（`node_modules/` 已 gitignore）。
+
+**结构**：
+- `md-image-rehost/SKILL.md` — Agent 指令，含 OSS 环境变量约定、key 方案、GIF/样式注意事项
+- `md-image-rehost/scripts/rehost.mjs` — 自包含 CLI（抽取→压缩→ali-oss 上传→改写），自动加载 `~/.config/md-image-rehost.env`
+- `md-image-rehost/package.json` — sharp + ali-oss 依赖
+
 ## 开发规范
 
 - Skill 入口文件必须是 `SKILL.md`，含 YAML frontmatter（name + description）

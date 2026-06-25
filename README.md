@@ -8,11 +8,13 @@
 |-------|------|------|
 | [desktop-kit](desktop-kit/) | 将任意 Web App 打包为 macOS 桌面客户端 | MVP |
 | [session-insights](session-insights/) | 分析 Claude Code 会话数据，生成 Mermaid 图表洞察报告（支持并行分析） | Stable |
+| [md-image-rehost](md-image-rehost/) | 抽取 Markdown 里的图片，压缩后转存到自有阿里云 OSS/CDN 并替换链接 | Stable |
 
 ## 前置要求
 
 - Python 3（标准库，无外部依赖）
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI 已安装
+- Node.js ≥ 18（仅 `md-image-rehost` 需要；首次使用前在该 Skill 目录执行 `npm install`）
 
 ## 安装
 
@@ -39,8 +41,8 @@
 
 | 插件 | 说明 | 包含 Skills |
 |------|------|-------------|
-| **dev-skills** | 开发技能 — 打包、构建、脚手架 | [desktop-kit](desktop-kit/) |
-| **productivity-skills** | 效能技能 — 洞察、复盘、工作流优化 | [session-insights](session-insights/) |
+| **dev-skills** | 开发技能 — 打包、构建、脚手架、资产处理 | [desktop-kit](desktop-kit/)、[agent-team-setup](agent-team-setup/)、[md-image-rehost](md-image-rehost/) |
+| **productivity-skills** | 效能技能 — 洞察、复盘、工作流优化 | [session-insights](session-insights/)、[skill-audit](skill-audit/) |
 
 也可以直接告诉 Claude Code：
 

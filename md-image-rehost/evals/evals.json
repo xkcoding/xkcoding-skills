@@ -1,0 +1,21 @@
+{
+  "skill_name": "md-image-rehost",
+  "evals": [
+    {
+      "id": 0,
+      "name": "static-clipping-rehost",
+      "prompt": "我有个剪藏笔记，路径在 EVAL_INPUT。里面既有第三方外链图片（picsum 那种），也有本地相对路径图片。帮我把笔记里的图片全部转存到我自己的阿里云 OSS/CDN，然后把链接替换成转存后的新地址。我的 OSS 访问凭证、bucket、region、CDN 域名等配置都在 /tmp/oss-eval.env 里，先 `set -a; . /tmp/oss-eval.env; set +a` 加载即可。",
+      "expected_output": "笔记中的远程图片和本地图片都被压缩、上传到 OSS，链接替换为 cdn.xkcoding.com 的可访问 URL（默认本地也上传）。",
+      "files": ["note1.md", "assets/local.png"],
+      "assertions": []
+    },
+    {
+      "id": 1,
+      "name": "gif-and-static-rehost",
+      "prompt": "note2.md（路径见 EVAL_INPUT）里有一张 GIF 动图和一张静态图。帮我把它们转存到我自己的阿里云 CDN 上，并把笔记里的链接替换成新地址。OSS 配置在 /tmp/oss-eval.env（`set -a; . /tmp/oss-eval.env; set +a` 加载）。转存后请确认新链接能正常访问（HTTP 200）。",
+      "expected_output": "两张图都转存成功、链接替换为 CDN 地址且可访问；GIF 即便变成静态图也必须能正常打开（不能 400）。",
+      "files": ["note2.md"],
+      "assertions": []
+    }
+  ]
+}

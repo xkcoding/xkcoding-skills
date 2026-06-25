@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Developer productivity skills for Claude Code",
-    "version": "0.3.1"
+    "version": "0.4.0"
   },
   "plugins": [
     {
@@ -16,7 +16,8 @@
       "strict": false,
       "skills": [
         "./desktop-kit",
-        "./agent-team-setup"
+        "./agent-team-setup",
+        "./md-image-rehost"
       ]
     },
     {

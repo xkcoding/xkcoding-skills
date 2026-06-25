@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-25
+
+### Added
+
+- **md-image-rehost**（新 Skill，dev-skills 插件）：抽取 Markdown 里的图片，sharp 压缩后转存到自有阿里云 OSS/CDN（ali-oss），就地替换链接
+  - 远程外链 + 本地相对路径图片默认都上传（`--skip-local` 仅处理远程）
+  - GIF 取首帧静态图，适配阿里云 OSS「原图保护 + 仅样式访问」（动图 WebP 经样式会 `BadWebPImage` 400）
+  - 对象键镜像源文件位置 `<项目名>/<md 相对路径>/<内容哈希>.<ext>`，`HEAD` 去重
+  - 凭证走环境变量 / `~/.config/md-image-rehost.env` 自动加载，不入库
+  - 需 Node.js ≥ 18，首次 `npm install`
+
 ## [0.3.1] - 2026-04-30
 
 ### Fixed

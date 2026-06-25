@@ -1,0 +1,11 @@
+{
+  "name": "md-image-rehost",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Extract, compress, and rehost Markdown images to Aliyun OSS/CDN",
+  "dependencies": {
+    "ali-oss": "^6.23.0",
+    "sharp": "^0.35.0"
+  }
+}
