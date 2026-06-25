@@ -58,7 +58,7 @@
 ## 开发规范
 
 - Skill 入口文件必须是 `SKILL.md`，含 YAML frontmatter（name + description）
-- 知识文档放 `references/`，可执行脚本放 `scripts/`
+- 知识文档放 `references/`，可执行脚本放 `scripts/`，评测用例放 `evals/evals.json`（可选）
 - marketplace 注册在 `.claude-plugin/marketplace.json`
 - 中文注释和文档，代码标识符保持英文
 

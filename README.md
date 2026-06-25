@@ -43,6 +43,7 @@
 |------|------|-------------|
 | **dev-skills** | 开发技能 — 打包、构建、脚手架、资产处理 | [desktop-kit](desktop-kit/)、[agent-team-setup](agent-team-setup/)、[md-image-rehost](md-image-rehost/) |
 | **productivity-skills** | 效能技能 — 洞察、复盘、工作流优化 | [session-insights](session-insights/)、[skill-audit](skill-audit/) |
+| **design-skills** | 设计与编辑技能 — 视觉美学、内容转网页 | [dark-luxury-editorial](dark-luxury-editorial/) |
 
 也可以直接告诉 Claude Code：
 
@@ -94,6 +95,7 @@ xkcoding-skills/
 ├── .claude-plugin/
 │   └── marketplace.json         # Skills 注册清单
 ├── CLAUDE.md                    # Claude Code 项目指令
+├── CHANGELOG.md                 # 版本变更记录
 ├── README.md                    # <- 你在这里
 │
 ├── desktop-kit/                 # Skill: Web -> macOS Desktop
@@ -104,11 +106,31 @@ xkcoding-skills/
 │   ├── scripts/                 # 工具脚本
 │   └── references/              # 知识文档
 │
+├── agent-team-setup/            # Skill: Agent Teams 环境准备
+│   ├── SKILL.md
+│   ├── scripts/                 # 环境诊断脚本
+│   └── references/
+│
 ├── session-insights/            # Skill: 会话洞察分析
 │   ├── README.md                # Skill 详细文档
 │   ├── SKILL.md                 # Skill 入口（Agent 指令）
 │   ├── references/              # 并行模式指令等知识文档
 │   └── scripts/                 # 数据提取 + 并行分析脚本
+│
+├── skill-audit/                 # Skill: Skill/Prompt 质量审查
+│   └── SKILL.md
+│
+├── dark-luxury-editorial/       # Skill: 暗黑奢华杂志风网页
+│   ├── SKILL.md
+│   └── references/              # 8 个分主题文档
+│
+├── md-image-rehost/             # Skill: Markdown 图片转存阿里云 OSS/CDN
+│   ├── README.md                # Skill 详细文档
+│   ├── SKILL.md                 # Skill 入口（Agent 指令）
+│   ├── scripts/                 # rehost.mjs（抽取→压缩→上传→改写）
+│   ├── evals/                   # 触发/行为评测用例
+│   ├── package.json             # sharp + ali-oss 依赖
+│   └── oss.env.example          # OSS 配置示例
 │
 └── openspec/                    # OpenSpec 变更管理
     └── changes/
@@ -125,7 +147,8 @@ xkcoding-skills/
 ├── DESIGN.md             # 设计文档（面向开发者，可选）
 ├── TESTING.md            # 测试流程（可选）
 ├── scripts/              # 可执行工具脚本
-└── references/           # Agent 按需加载的知识文档
+├── references/           # Agent 按需加载的知识文档
+└── evals/                # 触发/行为评测用例（可选，evals.json）
 ```
 
 ### 通用规则

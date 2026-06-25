@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Extract images from Markdown, compress them, upload to Aliyun OSS, and rewrite
-// the links in place. Self-contained — needs `sharp` and `ali-oss` (run via
-// `npx --yes --package=sharp --package=ali-oss node rehost.mjs ...`).
+// the links in place. Needs `sharp` and `ali-oss` installed in this skill's dir
+// (`npm install --prefix <skill-dir>`); ESM bare imports don't resolve through
+// `npx --package`, so deps live here rather than being fetched ad hoc.
 //
 // Usage:
 //   node rehost.mjs <file.md | dir> [--max-width N] [--quality Q]
@@ -12,7 +13,7 @@
 //   OSS_BUCKET                                  (required)
 //   OSS_REGION (e.g. oss-cn-hangzhou) OR OSS_ENDPOINT   (one required)
 //   OSS_CDN_BASE_URL    (optional, e.g. https://cdn.example.com; else OSS URL)
-//   OSS_KEY_PREFIX      (optional, default "md-images")
+//   OSS_KEY_PREFIX      (optional; unset = derive namespace from project name)
 //   OSS_PROCESS_STYLE   (optional, appended as ?x-oss-process=style/<name>)
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs'
