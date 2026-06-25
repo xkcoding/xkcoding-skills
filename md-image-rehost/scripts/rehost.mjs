@@ -108,11 +108,35 @@ const HTML_IMAGE = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi
 
 const skipHosts = new Set()
 if (cfg.cdnBaseUrl) { try { skipHosts.add(new URL(cfg.cdnBaseUrl).hostname) } catch { /* ignore */ } }
+// Also skip our own OSS object host. Without OSS_CDN_BASE_URL the script writes
+// raw OSS URLs; on a re-run those must be recognized as already-hosted instead
+// of being re-fetched and re-uploaded.
+if (client) { try { skipHosts.add(new URL(client.generateObjectUrl('probe')).hostname) } catch { /* ignore */ } }
 
-function collectUrls(md) {
+// Offsets [start,end) of fenced and inline code, so an image written inside a
+// code example (```...``` or `...`) is never fetched or rewritten as a real link.
+function codeSpans(md) {
+  const spans = []
+  let offset = 0, fenceChar = null, fenceStart = 0
+  for (const line of md.split('\n')) {
+    const fence = line.match(/^[ \t]*(`{3,}|~{3,})/)
+    if (fenceChar == null) {
+      if (fence) { fenceChar = fence[1][0]; fenceStart = offset }
+    } else if (fence && fence[1][0] === fenceChar) {
+      spans.push([fenceStart, offset + line.length]); fenceChar = null
+    }
+    offset += line.length + 1 // +1 for the stripped \n
+  }
+  if (fenceChar != null) spans.push([fenceStart, md.length]) // unclosed fence
+  for (const m of md.matchAll(/`+[^`\n]*`+/g)) spans.push([m.index, m.index + m[0].length])
+  return spans
+}
+const inSpans = (spans, i) => spans.some(([s, e]) => i >= s && i < e)
+
+function collectUrls(md, spans) {
   const urls = new Set()
-  for (const m of md.matchAll(MD_IMAGE)) urls.add(m[2])
-  for (const m of md.matchAll(HTML_IMAGE)) urls.add(m[1])
+  for (const m of md.matchAll(MD_IMAGE)) if (!inSpans(spans, m.index)) urls.add(m[2])
+  for (const m of md.matchAll(HTML_IMAGE)) if (!inSpans(spans, m.index)) urls.add(m[1])
   return [...urls]
 }
 // Classify a reference into how we should load it. Both remote and local images
@@ -120,7 +144,8 @@ function collectUrls(md) {
 function classify(ref) {
   if (/^data:/i.test(ref)) return 'skip' // inline data URIs — nothing to rehost
   let u = null
-  try { u = new URL(ref) } catch { /* not an absolute URL → treat as local path */ }
+  // Protocol-relative (//host/a.png) has no base, so new URL throws — assume https.
+  try { u = new URL(ref.startsWith('//') ? `https:${ref}` : ref) } catch { /* not an absolute URL → treat as local path */ }
   if (u && (u.protocol === 'http:' || u.protocol === 'https:')) {
     return skipHosts.has(u.hostname) ? 'skip' : 'remote'
   }
@@ -140,7 +165,8 @@ function resolveLocal(ref, mdDir) {
   return abs
 }
 async function fetchImage(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': FETCH_UA } })
+  const target = url.startsWith('//') ? `https:${url}` : url
+  const res = await fetch(target, { headers: { 'User-Agent': FETCH_UA } })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return Buffer.from(await res.arrayBuffer())
 }
@@ -190,7 +216,8 @@ function keyDirFor(path) {
 async function rehostFile(path) {
   const md = readFileSync(path, 'utf8')
   const mdDir = dirname(resolve(path))
-  const urls = collectUrls(md).filter((u) => classify(u) !== 'skip')
+  const spans = codeSpans(md)
+  const urls = collectUrls(md, spans).filter((u) => classify(u) !== 'skip')
   const keyDir = keyDirFor(path)
   if (opts.dryRun) console.log(`  key dir: ${keyDir}/`)
   const map = new Map()
@@ -209,9 +236,25 @@ async function rehostFile(path) {
   }
   let out = md
   if (map.size) {
-    out = md
-      .replace(MD_IMAGE, (full, alt, u, title) => (map.has(u) ? `![${alt}](${map.get(u)}${title ?? ''})` : full))
-      .replace(HTML_IMAGE, (full, src) => (map.has(src) ? full.replace(src, map.get(src)) : full))
+    // Position-based rewrite: collect edits (skipping code spans), then splice
+    // left-to-right so URL-length changes don't shift later match offsets.
+    const edits = []
+    for (const m of md.matchAll(MD_IMAGE)) {
+      if (inSpans(spans, m.index) || !map.has(m[2])) continue
+      edits.push([m.index, m.index + m[0].length, `![${m[1]}](${map.get(m[2])}${m[3] ?? ''})`])
+    }
+    for (const m of md.matchAll(HTML_IMAGE)) {
+      if (inSpans(spans, m.index) || !map.has(m[1])) continue
+      edits.push([m.index, m.index + m[0].length, m[0].replace(m[1], map.get(m[1]))])
+    }
+    edits.sort((a, b) => a[0] - b[0])
+    let res = '', cursor = 0
+    for (const [s, e, rep] of edits) {
+      if (s < cursor) continue // skip overlapping matches
+      res += md.slice(cursor, s) + rep
+      cursor = e
+    }
+    out = res + md.slice(cursor)
     if (!opts.dryRun) writeFileSync(path, out, 'utf8')
   }
   console.log(`${path}: ${ok} rehosted, ${failed} failed, ${urls.length} eligible${opts.dryRun ? ' [dry-run]' : ''}`)

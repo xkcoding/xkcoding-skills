@@ -3,7 +3,7 @@ name: md-image-rehost
 description: >-
   Use this whenever someone points at a Markdown file (or a folder of .md files)
   and wants the images it references pulled onto their OWN Aliyun OSS / object
-  storage / CDN, with every Markdown image link rewritten to the new address.
+  storage / CDN, with its Markdown image links rewritten to the new address.
   Images can be remote (知乎、微信、imgur、别人服务器、旧博客、过期外链) or
   local/relative on disk — both are uploaded by default, downloaded, compressed,
   and converted to WebP on the way. Handles both ![](…) and <img src> inside .md.
