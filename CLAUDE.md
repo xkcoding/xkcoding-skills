@@ -31,12 +31,14 @@
 - `session-insights/scripts/session-insights-analyze.py` — 并行分析编排（ThreadPoolExecutor + `claude -p`）
 - `session-insights/references/parallel-prompt.md` — 并行模式执行指令
 
-### skill-audit（New）
+### skill-craft（Stable，取代已退役的 skill-audit）
 
-审查 Agent Skill/Prompt 质量，检测事实与推断混淆、行为锚定、过度详细、排他性分类等反模式。
+写 skill，以及把写坏的 skill 救回来。六条原则（只给事实不给推断、锚定思维、确定性的活进脚本、目录自包含、外部事实标日期版本、对着现实测）+ 审查流程 + 从零写的结构决策。含一个例外：品味类 skill 的具体数值是承重的，不要按"过度详细"去精简。
 
 **结构**：
-- `skill-audit/SKILL.md` — 审计框架，含五项检查、审计流程和报告模板
+- `skill-craft/SKILL.md` — 六条原则、审查流程、写新 skill 的入口
+- `skill-craft/scripts/check.py` — 结构体检（frontmatter、跨目录链接、死链、孤儿文件、reference 成链、脚本语法、绝对路径），只测量不判断，已对本机十余个真实 skill 校准过误报
+- `skill-craft/references/` — `writing.md`（从零写）、`antipatterns.md`（12 条反模式，含 BAD/GOOD）
 
 ### dark-luxury-editorial（New）
 

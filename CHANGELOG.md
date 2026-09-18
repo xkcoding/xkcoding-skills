@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-19
+
+### Added
+
+- **skill-craft**（新 Skill，productivity-skills 插件）：写 skill，以及诊断、改造、体检写坏的 skill 和 prompt
+  - 六条原则取代旧的五项检查清单：只给事实和约束、锚定思维不锚定行为、确定性的活进脚本、一个目录就是全世界、外部行为标日期和版本、对着现实测
+  - `scripts/check.py`（纯标准库）做结构体检：frontmatter、跨目录链接、死链、孤儿文件、reference 成链、脚本语法、作者机器的绝对路径；只测量不判断，已对本机十余个真实 skill 校准误报
+  - `references/antipatterns.md` 12 条反模式带 BAD/GOOD；`references/writing.md` 给从零写的结构决策
+  - 明确记入品味类 skill 的例外：具体数值是承重的，不要当"过度详细"精简（v0.3.0 踩过）
+
+### Removed
+
+- **skill-audit**：由 skill-craft 取代。旧版只有审计清单、没有脚本、没覆盖结构与测试维度，且自身就是"怎么做"式的清单而非原则
+
 ## [0.5.0] - 2026-09-19
 
 ### Added

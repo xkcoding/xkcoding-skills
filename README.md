@@ -9,6 +9,7 @@
 | [desktop-kit](desktop-kit/) | 将任意 Web App 打包为 macOS 桌面客户端 | MVP |
 | [session-insights](session-insights/) | 分析 Claude Code 会话数据，生成 Mermaid 图表洞察报告（支持并行分析） | Stable |
 | [md-image-rehost](md-image-rehost/) | 抽取 Markdown 里的图片，压缩后转存到自有阿里云 OSS/CDN 并替换链接 | Stable |
+| [skill-craft](skill-craft/) | 写 skill，以及诊断、改造、体检写坏的 skill 和 prompt | Stable |
 | [dispatch:codex](dispatch/) | 把已 propose 的 OpenSpec change 派发给 codex：每个 change 一条 herdr worktree lane，进度由 OpenSpec 管，调度者验收后开评审请求（PR / MR，不绑定 GitHub） | MVP |
 
 ## 前置要求
@@ -44,7 +45,7 @@
 | 插件 | 说明 | 包含 Skills |
 |------|------|-------------|
 | **dev-skills** | 开发技能 — 打包、构建、脚手架、资产处理 | [desktop-kit](desktop-kit/)、[agent-team-setup](agent-team-setup/)、[md-image-rehost](md-image-rehost/) |
-| **productivity-skills** | 效能技能 — 洞察、复盘、工作流优化 | [session-insights](session-insights/)、[skill-audit](skill-audit/) |
+| **productivity-skills** | 效能技能 — 洞察、复盘、工作流优化 | [session-insights](session-insights/)、[skill-craft](skill-craft/) |
 | **design-skills** | 设计与编辑技能 — 视觉美学、内容转网页 | [dark-luxury-editorial](dark-luxury-editorial/) |
 | **dispatch** | 派发技能 — 把 OpenSpec change 交给外部 agent 在隔离 worktree 里执行 | [codex](dispatch/)（`/dispatch:codex`） |
 
@@ -120,8 +121,10 @@ xkcoding-skills/
 │   ├── references/              # 并行模式指令等知识文档
 │   └── scripts/                 # 数据提取 + 并行分析脚本
 │
-├── skill-audit/                 # Skill: Skill/Prompt 质量审查
-│   └── SKILL.md
+├── skill-craft/                 # Skill: 写 skill / 审查与优化 skill
+│   ├── SKILL.md
+│   ├── scripts/                 # check.py（结构体检，只测量不判断）
+│   └── references/              # writing.md（从零写）、antipatterns.md（反模式目录）
 │
 ├── dark-luxury-editorial/       # Skill: 暗黑奢华杂志风网页
 │   ├── SKILL.md
