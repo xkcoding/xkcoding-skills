@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Developer productivity skills for Claude Code",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "plugins": [
     {
@@ -37,6 +37,15 @@
       "strict": false,
       "skills": [
         "./dark-luxury-editorial"
+      ]
+    },
+    {
+      "name": "dispatch",
+      "description": "Dispatch OpenSpec changes to codex lanes in herdr worktrees — OpenSpec tracks the progress, the orchestrator verifies and opens the pull request",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./dispatch/codex"
       ]
     }
   ]

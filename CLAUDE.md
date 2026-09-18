@@ -55,6 +55,18 @@
 - `md-image-rehost/scripts/rehost.mjs` — 自包含 CLI（抽取→压缩→ali-oss 上传→改写），自动加载 `~/.config/md-image-rehost.env`
 - `md-image-rehost/package.json` — sharp + ali-oss 依赖
 
+### dispatch:codex（MVP）
+
+把已 propose 的 OpenSpec change 派发给 codex：每个 change 一条 lane（herdr worktree + 分支 + codex），lane 内跑标准的 `$openspec-apply-change`；进度只认 OpenSpec 的 `tasks.md`，调度者巡检、亲手验收、写 `verify.md`、push 并开 draft 评审请求（GitHub 用 `gh`、GitLab 用 `glab`、内部平台交给运行时里现有的 MR 工具或 skill，选择按 host 记住）；merge / archive / 清理留给人。入口 `/dispatch:codex <change…>`，子命令 `status`（巡检）、`setup`（环境检测与引导）。运行时依赖 herdr、codex CLI、openspec CLI，且 Claude Code 须跑在 herdr pane 内；目标仓库零安装物。
+
+**结构**（单个自包含 skill，不引用目录之外的文件）：
+- `dispatch/codex/SKILL.md` — 调度哲学、子命令路由、派发 / 巡检 / 验收发布流程、技术事实
+- `dispatch/codex/scripts/doctor.sh` — 环境体检（实际执行各工具的 version 命令，输出 JSON）
+- `dispatch/codex/scripts/lane.py` — lane 的全部机械操作（plan / create / launch / prompt / list / record-verify / publish / forge / note），纯 Python 标准库，每个子命令输出一个 JSON
+- `dispatch/codex/references/` — `setup.md`（安装与上手引导）、`known-behaviors.md`（带日期与版本的 herdr / codex / openspec 行为记录）
+
+**写 skill 的品味标杆**：本机的 web-access 与 baoyu-skills——确定性的活进脚本、目录自包含、原则先行且精简、skill 文本里不出现开发过程的编号。
+
 ## 开发规范
 
 - Skill 入口文件必须是 `SKILL.md`，含 YAML frontmatter（name + description）

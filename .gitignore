@@ -10,3 +10,5 @@ docs/
 .specstory/
 .playwright-mcp/
 *.png
+__pycache__/
+*.pyc

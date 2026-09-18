@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-19
+
+### Added
+
+- **dispatch:codex**（新 Skill，新插件 `dispatch`）：把已 propose 的 OpenSpec change 派发给 codex，在 herdr 的隔离 worktree 里执行标准 apply
+  - 每个 change 一条 lane，多个 change 并行；进度只认 OpenSpec 的 `tasks.md`，不引入私有状态协议
+  - 默认姿态为 codex 的 `--approve-for-me`（自动审查 + 沙箱），`--strict` 可选，不提供 yolo
+  - 调度者亲手重跑验收、写 `verify.md`、push 分支、开 draft 评审请求；merge / archive / 清理只打印命令
+  - 评审请求不绑定 GitHub：`github.com` 用 `gh`，GitLab 用 `glab`，内部平台交给运行时里现有的 MR 工具或 skill（脚本交出与平台无关的交接包）；认不出的 host 只问一次，选择按 host 记住
+  - 机械操作收在 `scripts/lane.py`（纯 Python 标准库），状态全部从 git + herdr + openspec 现查
+  - 子命令 `status`（巡检）、`setup`（环境检测、征得同意后协助安装、上手与退出引导）
+  - 目标仓库零安装物，卸载插件即退出
+  - 需要 herdr、codex CLI、OpenSpec CLI，且 Claude Code 跑在 herdr pane 内
+
 ## [0.4.0] - 2026-06-25
 
 ### Added

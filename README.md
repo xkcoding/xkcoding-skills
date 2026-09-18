@@ -9,12 +9,14 @@
 | [desktop-kit](desktop-kit/) | 将任意 Web App 打包为 macOS 桌面客户端 | MVP |
 | [session-insights](session-insights/) | 分析 Claude Code 会话数据，生成 Mermaid 图表洞察报告（支持并行分析） | Stable |
 | [md-image-rehost](md-image-rehost/) | 抽取 Markdown 里的图片，压缩后转存到自有阿里云 OSS/CDN 并替换链接 | Stable |
+| [dispatch:codex](dispatch/) | 把已 propose 的 OpenSpec change 派发给 codex：每个 change 一条 herdr worktree lane，进度由 OpenSpec 管，调度者验收后开评审请求（PR / MR，不绑定 GitHub） | MVP |
 
 ## 前置要求
 
 - Python 3（标准库，无外部依赖）
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI 已安装
 - Node.js ≥ 18（仅 `md-image-rehost` 需要；首次使用前在该 Skill 目录执行 `npm install`）
+- [herdr](https://herdr.dev)、codex CLI、[OpenSpec](https://github.com/Fission-AI/OpenSpec) CLI（仅 `dispatch:codex` 需要；`/dispatch:codex setup` 会逐项检测并在征得同意后协助安装）
 
 ## 安装
 
@@ -44,6 +46,7 @@
 | **dev-skills** | 开发技能 — 打包、构建、脚手架、资产处理 | [desktop-kit](desktop-kit/)、[agent-team-setup](agent-team-setup/)、[md-image-rehost](md-image-rehost/) |
 | **productivity-skills** | 效能技能 — 洞察、复盘、工作流优化 | [session-insights](session-insights/)、[skill-audit](skill-audit/) |
 | **design-skills** | 设计与编辑技能 — 视觉美学、内容转网页 | [dark-luxury-editorial](dark-luxury-editorial/) |
+| **dispatch** | 派发技能 — 把 OpenSpec change 交给外部 agent 在隔离 worktree 里执行 | [codex](dispatch/)（`/dispatch:codex`） |
 
 也可以直接告诉 Claude Code：
 
@@ -131,6 +134,13 @@ xkcoding-skills/
 │   ├── evals/                   # 触发/行为评测用例
 │   ├── package.json             # sharp + ali-oss 依赖
 │   └── oss.env.example          # OSS 配置示例
+│
+├── dispatch/                    # 插件: 派发 OpenSpec change 给外部 agent
+│   ├── README.md                # 插件文档
+│   └── codex/                   # Skill: /dispatch:codex（自包含）
+│       ├── SKILL.md             # Skill 入口（Agent 指令）
+│       ├── scripts/             # doctor.sh（环境体检）+ lane.py（lane 的全部机械操作）
+│       └── references/          # setup 引导、herdr/codex/openspec 已知行为
 │
 └── openspec/                    # OpenSpec 变更管理
     └── changes/
