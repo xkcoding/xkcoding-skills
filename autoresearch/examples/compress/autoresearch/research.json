@@ -1,0 +1,22 @@
+{
+  "_doc": "One subject: shrink a fixed corpus with a single-file pure-Python codec. Bytes, lower is better; the codec's own source is part of the score.",
+  "name": "compress",
+  "description": "Make a fixed corpus as small as possible with a single-file, pure-Python codec. The score is bytes: every corpus file encoded, plus the size of codec.py itself, so carrying the corpus inside the decoder gains nothing and only modelling the data wins. Lower is better.",
+  "direction": "min",
+  "harness": {
+    "type": "claude",
+    "timeout_sec": 1500,
+    "max_turns": 80
+  },
+  "subjects": [
+    {
+      "name": "codec",
+      "editable": ["codec.py"],
+      "locked": ["spec/**", "sample/**", "README.md", ".gitignore"],
+      "agent_may_score": true,
+      "max_rounds": 40,
+      "max_consecutive_discards": 8,
+      "max_consecutive_errors": 3
+    }
+  ]
+}

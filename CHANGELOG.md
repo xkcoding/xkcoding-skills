@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-08
+
+### Added
+
+- **autoresearch**（新 Skill，新插件 `autoresearch`）：把一个可度量的长期目标交给会话之外的循环，几十轮无人值守地迭代
+  - 循环是一个独立进程（`scripts/ar.py`，纯 Python 标准库，兼容 3.9），不依赖 Claude Code 会话：每轮组装 prompt → 拉起无状态 harness → 边界检查 → gate → score → commit → 判定 → 不是 keep 就 `git revert` → 记账 → 报告 → 判断停止
+  - 四种结局：keep / discard / crash（改了锁定路径或 gate 失败，不打分）/ error（harness 或打分器坏了，不占 discard 配额）
+  - git 当实验日志：每轮一个 commit（`--allow-empty`），失败的轮次 revert 而不是 reset，历史里留得住；空轮次不 revert
+  - 打分器契约 `{score, version, details, remaining}`：自报版本，只在同版本内比较，换版本自动重测基线并在报告里换色带；`remaining` 是无状态 harness 的状态载体
+  - 三种 harness：`claude`（`claude -p`，`--max-turns` / `--max-budget-usd` 截断的轮次照常打分）、`codex`（`codex exec --json`）、`shell`（任意命令，自测与自定义用）；超时杀整个进程组，`harness.env` 的 `$VAR` 透传第三方端点凭据
+  - 运行锁（同一研究同时只能有一个 run）、`research.json` 拼错的键拒绝而不是静默忽略、解析不了的 checkpoint 拒绝 run 而不是悄悄跳过
+  - 账本在仓库旁的 `<research>.ar/`，`index.json` 可从 checkpoint 文件完全重建；报告是单文件 HTML（内嵌 JSON + SVG 曲线，版本色带、discard 空心点、crash 红叉），每轮重新生成
+  - 四个示例研究：`example toy`（不需要模型，验证机制）、`example kata`（两 subject，先写用例再写实现）、`example compress`（有梯度：单文件纯 Python 编解码器压固定语料，分数 = 压缩字节 + 编解码器自身字节）、`example retrieval`（两级管线：召回率 / 召准率 → 选用率，held-out 打分，公开 / 隐藏差距即过拟合）；模板可带 `setup.py` 在生成时产数据
+  - 需要 python3 ≥ 3.9、git ≥ 2.23，以及 `claude` 或 `codex` CLI 之一；目标仓库只多出一个 `autoresearch/` 定义目录和一条 `research/<name>` 分支
+
 ## [0.6.0] - 2026-09-19
 
 ### Added

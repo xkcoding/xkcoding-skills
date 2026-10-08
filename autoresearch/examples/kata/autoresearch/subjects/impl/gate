@@ -1,0 +1,5 @@
+#!/bin/sh
+# The parser must at least compile. Nothing to compile yet is fine: the baseline round has to
+# be able to measure an empty repository.
+[ -f src/qs.py ] || exit 0
+python3 -m py_compile src/qs.py || { echo "src/qs.py does not compile" >&2; exit 1; }

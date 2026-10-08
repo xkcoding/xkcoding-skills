@@ -57,6 +57,17 @@
 - `md-image-rehost/scripts/rehost.mjs` — 自包含 CLI（抽取→压缩→ali-oss 上传→改写），自动加载 `~/.config/md-image-rehost.env`
 - `md-image-rehost/package.json` — sharp + ali-oss 依赖
 
+### autoresearch（MVP）
+
+把一个可度量的长期目标交给会话之外的循环：`scripts/ar.py` 作为独立进程驱动每一轮——组装 prompt → 拉起无状态 harness（`claude` / `codex` / `shell`）→ 边界检查 → gate → score → commit → keep / discard / crash / error → 不是 keep 就 `git revert` → 记账 → 报告。定义（`research.json` + `subjects/<name>/{program.md,score,gate}`）放目标仓库里并对 agent 锁定，账本放仓库旁的 `<research>.ar/`。打分器自报版本，只在同版本内比较；`remaining` 是下一轮的状态载体。
+
+**结构**：
+- `autoresearch/SKILL.md` — 定位、子命令、三条原则、init 的八步（含开循环前的手跑验证）、run、读进度（status 字段 → 含义）、人工介入、agent 每轮看到什么、技术事实
+- `autoresearch/scripts/ar.py` — 循环本身（纯 Python 标准库，兼容 3.9），子命令 `doctor` / `init` / `run` / `status` / `report` / `example`；运行锁、未知键拒绝、坏 checkpoint 拒绝
+- `autoresearch/scripts/report.py` — 账本 → 单文件 HTML 报告（内嵌 JSON + SVG，无外部依赖）
+- `autoresearch/references/` — `scorer-guide.md`（契约、开循环前手跑三次、五个真实的坑）、`known-behaviors.md`（claude / codex / GLM / git 的实测行为，带日期与版本）
+- `autoresearch/examples/` — `toy/`（不需要模型，验证机制）、`kata/`（两 subject，先写用例再写实现）、`compress/`（有梯度的研究：压缩比 + 编解码器自身大小，`direction: min`）、`retrieval/`（两级管线模板：召回 → 选用，held-out 打分，公开/隐藏差距即过拟合）；每个模板可带 `autoresearch/setup.py` 在生成时产数据
+
 ### dispatch:codex（MVP）
 
 把已 propose 的 OpenSpec change 派发给 codex：每个 change 一条 lane（herdr worktree + 分支 + codex），lane 内跑标准的 `$openspec-apply-change`；进度只认 OpenSpec 的 `tasks.md`，调度者巡检、亲手验收、写 `verify.md`、push 并开 draft 评审请求（GitHub 用 `gh`、GitLab 用 `glab`、内部平台交给运行时里现有的 MR 工具或 skill，选择按 host 记住）；merge / archive / 清理留给人。入口 `/dispatch:codex <change…>`，子命令 `status`（巡检）、`setup`（环境检测与引导）。运行时依赖 herdr、codex CLI、openspec CLI，且 Claude Code 须跑在 herdr pane 内；目标仓库零安装物。

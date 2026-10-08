@@ -10,6 +10,7 @@
 | [session-insights](session-insights/) | 分析 Claude Code 会话数据，生成 Mermaid 图表洞察报告（支持并行分析） | Stable |
 | [md-image-rehost](md-image-rehost/) | 抽取 Markdown 里的图片，压缩后转存到自有阿里云 OSS/CDN 并替换链接 | Stable |
 | [skill-craft](skill-craft/) | 写 skill，以及诊断、改造、体检写坏的 skill 和 prompt | Stable |
+| [autoresearch](autoresearch/) | 把一个可度量的目标交给会话之外的循环：每轮一个无状态 agent，打分器决定留下还是 revert，一份报告看全部轮次 | MVP |
 | [dispatch:codex](dispatch/) | 把已 propose 的 OpenSpec change 派发给 codex：每个 change 一条 herdr worktree lane，进度由 OpenSpec 管，调度者验收后开评审请求（PR / MR，不绑定 GitHub） | MVP |
 
 ## 前置要求
@@ -18,6 +19,7 @@
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI 已安装
 - Node.js ≥ 18（仅 `md-image-rehost` 需要；首次使用前在该 Skill 目录执行 `npm install`）
 - [herdr](https://herdr.dev)、codex CLI、[OpenSpec](https://github.com/Fission-AI/OpenSpec) CLI（仅 `dispatch:codex` 需要；`/dispatch:codex setup` 会逐项检测并在征得同意后协助安装）
+- git ≥ 2.23 与 `claude` 或 `codex` CLI 之一（仅 `autoresearch` 需要；`/autoresearch doctor` 逐项检测，只报告不安装）
 
 ## 安装
 
@@ -47,6 +49,7 @@
 | **dev-skills** | 开发技能 — 打包、构建、脚手架、资产处理 | [desktop-kit](desktop-kit/)、[agent-team-setup](agent-team-setup/)、[md-image-rehost](md-image-rehost/) |
 | **productivity-skills** | 效能技能 — 洞察、复盘、工作流优化 | [session-insights](session-insights/)、[skill-craft](skill-craft/) |
 | **design-skills** | 设计与编辑技能 — 视觉美学、内容转网页 | [dark-luxury-editorial](dark-luxury-editorial/) |
+| **autoresearch** | 自驱研究 — 会话之外的多轮改进循环，打分器驱动 | [autoresearch](autoresearch/) |
 | **dispatch** | 派发技能 — 把 OpenSpec change 交给外部 agent 在隔离 worktree 里执行 | [codex](dispatch/)（`/dispatch:codex`） |
 
 也可以直接告诉 Claude Code：
@@ -138,6 +141,12 @@ xkcoding-skills/
 │   ├── package.json             # sharp + ali-oss 依赖
 │   └── oss.env.example          # OSS 配置示例
 │
+├── autoresearch/                # Skill: 会话之外的多轮改进循环
+│   ├── SKILL.md                 # Skill 入口（Agent 指令）
+│   ├── scripts/                 # ar.py（循环本身）+ report.py（账本 -> 单文件报告）
+│   ├── references/              # 打分器指南、外部工具已知行为（带日期与版本）
+│   └── examples/                # toy / kata / compress（有梯度）/ retrieval（召回→选用两级管线）四个示例研究
+│
 ├── dispatch/                    # 插件: 派发 OpenSpec change 给外部 agent
 │   ├── README.md                # 插件文档
 │   └── codex/                   # Skill: /dispatch:codex（自包含）
@@ -186,6 +195,8 @@ xkcoding-skills/
 - [ ] **desktop-kit P2** — CHANGELOG -> appcast、更多框架检测
 - [x] **session-insights MVP** — 会话数据提取、Mermaid 报告生成、summary/detailed 模式
 - [x] **session-insights 并行分析** — 分批并行 + 后台执行 + 进度反馈
+- [x] **autoresearch MVP** — 外部 runner、三种 harness、打分器契约、静态报告、两个示例研究
+- [ ] **autoresearch P1** — 接真实项目的打分器（DRR 召回率 / 召准率 / GT 资产选用率）
 
 ## License
 

@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Reject what is not worth measuring: banned modules, side files, a stage that breaks or hangs
+on the public split. Exit 0 = pass. Runs from the repository root."""
+
+import ast
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "lib"))
+import evalkit  # noqa: E402
+
+STAGE = "select"
+OWN_FILE = STAGE + ".py"
+BANNED_MODULES = {"os", "sys", "subprocess", "socket", "urllib", "http", "ftplib", "importlib",
+                  "pathlib", "shutil", "glob", "pickle", "marshal", "shelve", "ctypes",
+                  "multiprocessing", "threading", "io", "codecs", "tempfile"}
+BANNED_CALLS = {"open", "__import__", "exec", "eval", "compile"}
+
+
+def fail(msg):
+    sys.stderr.write("gate: " + msg + "\n")
+    sys.exit(1)
+
+
+def check_source():
+    if not os.path.isfile(OWN_FILE):
+        fail(OWN_FILE + " is missing")
+    try:
+        tree = ast.parse(open(OWN_FILE, encoding="utf-8").read())
+    except SyntaxError as exc:
+        fail("{} does not parse: {}".format(OWN_FILE, exc))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in BANNED_MODULES:
+                    fail("{} imports {}, which is banned".format(OWN_FILE, alias.name))
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or "").split(".")[0] in BANNED_MODULES:
+                fail("{} imports from {}, which is banned".format(OWN_FILE, node.module))
+        elif isinstance(node, ast.Call):
+            # Bare names only: re.compile() is fine, compile() is not. The one attribute that
+            # still matters is .open(), which io.open and codecs.open would otherwise offer.
+            if isinstance(node.func, ast.Name) and node.func.id in BANNED_CALLS:
+                fail("{} calls {}(), which is banned".format(OWN_FILE, node.func.id))
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "open":
+                fail("{} calls .open(), which is banned".format(OWN_FILE))
+
+
+def check_tree():
+    p = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"],
+                       capture_output=True, text=True)
+    changed = sorted(line[3:] for line in p.stdout.splitlines() if line.strip())
+    extra = [c for c in changed if c != OWN_FILE]
+    if extra:
+        fail("only {} may change; the tree also changed: {}".format(OWN_FILE, ", ".join(extra[:8])))
+
+
+def check_runs():
+    _results, err = evalkit.run_stage(STAGE, evalkit.PUBLIC)
+    if err:
+        fail(err)
+
+
+check_source()
+check_tree()
+check_runs()
+print("gate: ok")

@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""100 × hit rate on the held-out split, with candidates from the current recall.py. The ceiling
+(target among the candidates) is printed beside it. Prints one JSON object. Runs from the
+repository root, after the gate."""
+
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "lib"))
+import evalkit  # noqa: E402
+from gen import read_jsonl  # noqa: E402
+
+VERSION = "1.0.0"
+
+
+def measure(split_path):
+    results, err = evalkit.run_stage("select", split_path)
+    if err:
+        sys.stderr.write("score: " + err + "\n")
+        sys.exit(2)
+    return evalkit.select_metrics(results, read_jsonl(split_path))
+
+
+hidden = measure(evalkit.HELDOUT)
+public = measure(evalkit.PUBLIC)
+assets = evalkit.asset_index()
+
+reachable = [(q, c) for q, c, in_cands in public["misses"] if in_cands]
+unreachable = sum(1 for _q, _c, in_cands in public["misses"] if not in_cands)
+remaining = ["{!r} -> chose {}, meant {}".format(
+    q["query"], evalkit.describe(assets, c) if c else "nothing", evalkit.describe(assets, q["gt"]))
+    for q, c in reachable[:50]]
+if len(reachable) > 50:
+    remaining.append("... {} more public misses with the target among the candidates".format(
+        len(reachable) - 50))
+remaining.append("ceiling: {:.1%} of held-out queries have the target among recall's candidates; "
+                 "{} public misses are recall's, not yours".format(hidden["ceiling"], unreachable))
+
+print(json.dumps({
+    "score": round(100 * hidden["hit"], 2),
+    "version": VERSION,
+    "details": {
+        "heldout": {"hit": hidden["hit"], "ceiling": hidden["ceiling"], "queries": hidden["n"]},
+        "public": {"hit": public["hit"], "ceiling": public["ceiling"], "queries": public["n"]},
+        "gap_public_minus_heldout": round(100 * (public["hit"] - hidden["hit"]), 2),
+    },
+    "remaining": remaining,
+}, ensure_ascii=False))

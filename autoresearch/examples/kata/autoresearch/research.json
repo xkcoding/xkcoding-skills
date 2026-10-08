@@ -1,0 +1,31 @@
+{
+  "_doc": "A kata-sized research with two subjects: the second one may only start once the first has kept a round.",
+  "name": "qs-kata",
+  "description": "Build a query-string parser the way this loop wants it built: first a case set that covers the specification, then an implementation that satisfies it. The specification is spec/features.json and it is the only authority; the scorers derive everything from it.",
+  "direction": "max",
+  "harness": {
+    "type": "claude",
+    "timeout_sec": 900,
+    "max_turns": 40
+  },
+  "subjects": [
+    {
+      "name": "cases",
+      "editable": ["cases/**"],
+      "locked": ["src/**", "spec/**"],
+      "max_rounds": 40,
+      "max_consecutive_discards": 6,
+      "max_consecutive_errors": 3,
+      "budget": {"minutes": null, "tokens": null}
+    },
+    {
+      "name": "impl",
+      "editable": ["src/**"],
+      "locked": ["cases/**", "spec/**"],
+      "depends_on": ["cases"],
+      "max_rounds": 40,
+      "max_consecutive_discards": 6,
+      "max_consecutive_errors": 3
+    }
+  ]
+}
