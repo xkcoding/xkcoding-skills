@@ -29,8 +29,21 @@
 ## 评审请求的 CLI
 
 - (2026-09-18, gh 2.96.0) `gh pr create` 缺任何一个参数都会进入交互式提问，在非交互的调用里就是挂死；所以 `--repo` / `--base` / `--head` / `--title` / `--body-file` 全部显式给出。`gh pr list --head <branch> --state all --json number,url,state,isDraft` 用来复用已有的 PR。
-- (2026-09-18, glab 1.113.0，**仅核对过 `--help`，没有对真实的 GitLab 跑过**) `glab mr create -R <repo 或 git URL> -s <source> -b <target> -t <title> -d <description> --draft --yes --no-editor`；`glab mr list -R … -s <branch> -A -F json`；`glab auth status --hostname <host>`。`-R` 接受完整的 git URL，所以不必另行解析项目路径。MR 的 JSON 字段按 GitLab API 取 `iid` / `web_url` / `state` / `draft`——第一次在真实 GitLab 上用时核对一遍，然后更新这一条。
+- (2026-09-24, glab 1.113.0，**已对真实的自建 GitLab 验证**：19 条 lane 各开出一个 MR) `glab mr create -R <repo 或 git URL> -s <source> -b <target> -t <title> -d <description> --draft --yes --no-editor`；`glab mr list -R … -s <branch> -A -F json`；`glab auth status --hostname <host>`。`-R` 接受完整的 git URL，所以不必另行解析项目路径。MR 的 JSON 字段按 GitLab API 取 `iid` / `web_url` / `state` / `draft`。
 - (2026-09-18) 某内部平台的 MR skill（`yunxiao-mr-review`）创建 MR 的入参是 `--target <branch>` / `--source <branch>` / `--title`，与 `publish` 交出的 `handoff` 字段一一对应。
+
+## 生产使用（2026-09-21 → 09-24）
+
+一次真实的连续使用，不是临时试验：某内部仓库、自建 GitLab（host 名里没有 `gitlab` 字样）、19 条 lane 分 12 批跑完 4 天，全部 `--approve-for-me` 姿态、全部 goal 模式。下面都是那次留下的事实。
+
+- **全部 19 条都走到了发布**：19 个 `pushed_sha`、19 个真实 MR，`publish` 重试 0 次、`last_publish_error` 0 条。
+- **续跑路径几乎不触发**：19 条 lane 的 nudge 总数为 **0**。goal 模式 + 自动审查下，lane 基本能自己从头跑到尾；`idle_unfinished` 是修复路径，不是引擎。
+- **认不出的 host 只问一次**：`code.devops.xiaohongshu.com` 猜不出来 → 问了一次 → 记为 `glab` → 之后 19 条 lane 再没问过。按 host 记住这个决定是对的。
+- **base 可以是非默认分支**：19 条全部以一个 feature 分支为 base，MR 也开在它上面。base 只需在 origin 上存在。
+- **一条 lane 可以跑很久**：最长的一条从下达 goal 到被上报间隔 3 小时 17 分，期间没有撞上 context 占满或限流。
+- **agent 名截断对着真实 herdr 验证过**：3 个超过 32 字符的 change 名（36 / 36 / 38）按整词从尾部丢弃，落到 27 / 29 / 31 字符，都仍以字母开头、无尾部连字符；正好 32 字符的那个原样保留。herdr 全部接受。
+- **`goal_blocked` 真实发生过一次，设计里的人工分支成立**：一条 lane 的 codex 自判 goal blocked，原因是外部依赖失败（CDP 读网络报 `Browser is not available: 1`）。巡检按"`goal_blocked` → 上报，不自行恢复"把原因交给人；人处理之后这条 lane 继续跑完，通过验收并开出 MR。**结论**：模型自判的 blocked 通常是真的外部障碍，不要让巡检去 resume 它。
+- **一批同时跑 1–4 条**。更高的并发没试过。
 
 ## openspec
 
@@ -41,11 +54,11 @@
 
 ## 没验证过的说法
 
-遇到时小心处理，验证之后挪到上面。
+遇到时小心处理，验证之后挪到上面。每条都注明了为什么那次生产使用没能覆盖它。
 
-- 自动审查**拒绝**一个请求时，是把拒绝回给模型，还是弹给人让 lane 进入 `blocked`。两种都按巡检表处理即可。
-- `--strict` 下审批弹层的具体样子与按键。本 skill 不代答审批，只需要认出"有弹层"并把原文上报。
-- 向已有 goal 的空闲 lane 再发 `/goal <objective>` 会弹出默认项为 Replace 的列表（来自 herdr-dispatch 的文档）。`lane.py` 不会这样做；万一见到，选"保留现有 goal"的那一项。
-- `/goal resume` 即时生效且无弹层（同上来源）。resume 之后以下一次巡检的 goal 状态和新 commit 为准，没变化就上报。
-- herdr agent 名的上限是 32 个字符（同上来源）。`lane.py` 按这个上限截断。
-- 长任务下的 context 占满、compaction、账号限流的实际表现。
+- 自动审查**拒绝**一个请求时，是把拒绝回给模型，还是弹给人让 lane 进入 `blocked`。（那次唯一的一条 blocked 是外部工具失败，不是审查拒绝，所以仍未覆盖。两种都按巡检表处理即可。）
+- `--strict` 下审批弹层的具体样子与按键。（19 条 lane 全是默认姿态。本 skill 不代答审批，只需要认出"有弹层"并把原文上报。）
+- 向已有 goal 的空闲 lane 再发 `/goal <objective>` 会弹出默认项为 Replace 的列表（来自 herdr-dispatch 的文档）。（`lane.py` 本来就不会重发，所以触发不到；万一见到，选"保留现有 goal"的那一项。）
+- `/goal resume` 即时生效且无弹层（同上来源）。（那次没遇到限流，被上报的那条是人工处理的，没走 resume。）
+- 长任务下的 context 占满、compaction、账号限流的实际表现。（最长的一条跑了 3 小时 17 分也没撞上。）
+- 把一条**未完成**的 lane 半路接手——进它的 worktree 直接 `/opsx:apply` 接着做。（那次 19 条都跑到了发布，没有半路接手的场景。分支和 `tasks.md` 都是普通 git 产物，这条路径在设计上成立，但没实际走过。）
