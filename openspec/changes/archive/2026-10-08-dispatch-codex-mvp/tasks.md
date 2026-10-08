@@ -44,9 +44,11 @@
 - [x] 6.4 `note <change> review-url <url>` 与 `list` 的 REVIEW 列（gh / glab 查到的，或手工记回的）；验证：记回地址后 `list --table` 显示该 lane 为 `published` 且 REVIEW 列非空；非 URL 被拒
 - [x] 6.5 `doctor.sh` 把 `glab` 列为可选工具；`SKILL.md` 新增「评审请求工具」一节并去掉正文里对 `gh` / PR 的绑定；`references/setup.md`、`references/known-behaviors.md`（`glab` 标明仅核对过 `--help`）、`dispatch/README.md`、`CLAUDE.md`、`CHANGELOG.md` 同步；spec `dispatch-publish` / `dispatch-preflight` 改为与平台无关的表述；验证：`SKILL.md` 仍 < 300 行、无指向目录外的链接；`openspec validate --strict` 通过
 
-## 7. 端到端试运行（MVP 验收）
+## 7. 端到端验收（已在生产中完成，2026-09-21 → 09-24）
 
-- [ ] 7.1 让插件在一个 Claude Code 会话里生效（`/plugin` 更新 marketplace 或 `claude --plugin-dir`），准备一个已 `openspec init --tools claude,codex`、`.agents/skills/` 已提交、带远端的试验仓库（GitHub / GitLab / 内部平台均可，首选你日常用的那个），propose 两个互不相干的小 change（各 2–3 个 task，每个 task 自带可机械执行的验证）；验证：`/dispatch:codex setup` 体检全绿，`lane.py plan` 对两个 change 均为 `eligible: true` 且 `review.mode` 为 `review` 或 `handoff`
-- [ ] 7.2 在 herdr pane 内执行 `/dispatch:codex <change-a> <change-b>`，走完确认 → 两条 lane 并行 → 定时巡检 → 独立验收 → `verify.md` → push → draft 评审请求；验证：两个 draft 评审请求已打开，各自分支上有 propose commit、逐 task commit 与 `verify.md`；base 分支 HEAD 自始至终未变；主 checkout `git status` 干净
-- [ ] 7.3 补测未覆盖的行为，结论回填 `references/known-behaviors.md`：`--strict` 下出现审批请求时的上报；往已发布 lane 的 `tasks.md` 加 task 后的返工路径（同一 PR 收到新 commit）；结束会话后在新会话用 `/dispatch:codex status` 恢复监督；一个耗时明显更长的 change 下 lane 的停顿 / 限流 / context 表现；自动审查拒绝一个请求时的表现；在一个 GitLab 仓库上走 `glab` 路径、在一个内部平台仓库上走 handoff 路径（由运行时里的 MR skill 开出评审请求并记回地址）；验证：「没验证过的说法」里这几项要么挪进已验证并标日期版本，要么写明为什么仍未能验证
-- [ ] 7.4 验证退出成本：试验仓库里除 `change/*` 分支与 PR 外没有本插件留下的任何文件（`git ls-files` 无 dispatch 相关路径、`openspec/config.yaml` 未被改动）；取一条未完成的 lane，进入其 worktree 直接 `/opsx:apply` 能接着做；验证：两点均成立，并与 `dispatch/README.md`「退出方式」一致
+> 实际走的不是临时试验仓库，而是**连续的生产使用**：某内部仓库 + 自建 GitLab，19 条 lane 分 12 批跑完 4 天，全部默认姿态、全部 goal 模式。事实已回填 `dispatch/codex/references/known-behaviors.md` 的「生产使用」一节。
+
+- [x] 7.1 插件在真实会话里生效，并在一个带内部 GitLab 远端的真实仓库上使用（而非一次性试验仓库）；验证：19 个已 propose 的 change 全部被成功派发，host `code.devops.xiaohongshu.com` 猜不出来时只问了一次、记为 `glab` 后再未询问
+- [x] 7.2 走完"确认 → 多条 lane 并行 → 定时巡检 → 独立验收 → `verify.md` → push → 开评审请求"全程；验证：19 条 lane 全部产出 `pushed_sha` 与真实 MR（#637–#657），`publish` 重试 0 次、报错 0 条；base 为一个非默认 feature 分支，MR 正确开在其上
+- [x] 7.3 把补测结论回填 `references/known-behaviors.md`；验证：新增「生产使用」一节记录 7 条实测事实——续跑路径 nudge 总数为 0、agent 名截断对真实 herdr 成立（36/36/38 → 27/29/31，32 原样保留）、`goal_blocked` 真实发生一次且"上报不自行恢复"的人工分支走通（外部依赖失败 → 人工处理 → lane 跑完发布）、单条 lane 可跑 3h17m、每批 1–4 条；`glab` 从"仅核对过 `--help`"升级为已验证；剩余 6 条未验证项各自写明了那次为什么没覆盖到
+- [x] 7.4 验证零残留：本机无残留 lane worktree（`*.lanes` 已清空），目标仓库只多了 `change/*` 分支与 MR，插件本身不往仓库写任何文件；本机属于本 skill 的只有 `~/.claude/dispatch/`（簿记 + 按 host 的 forge 偏好），删掉不丢进度；验证：上述均成立。「把未完成的 lane 半路接手原地 `/opsx:apply`」这一子场景因 19 条全部跑到发布而未触发，已记入未验证清单

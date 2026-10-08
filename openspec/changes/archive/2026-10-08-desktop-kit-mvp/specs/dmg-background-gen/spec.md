@@ -1,3 +1,7 @@
+## Purpose
+
+Produces the background artwork of the DMG installer, aligned to the same coordinate system create-dmg places its drop zones on, so the picture and the icons it is guiding cannot drift apart.
+
 ## ADDED Requirements
 
 ### Requirement: Align with create-dmg coordinate system

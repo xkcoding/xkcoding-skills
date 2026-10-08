@@ -1,3 +1,7 @@
+## Purpose
+
+Generates the Wails v2 shell that lets an existing web app run as a native macOS application: the Go entry point, the application struct, the build configuration, and the interception that keeps external links out of the embedded webview.
+
 ## ADDED Requirements
 
 ### Requirement: Generate main.go entry point

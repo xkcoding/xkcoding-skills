@@ -1,3 +1,7 @@
+## Purpose
+
+Identifies what kind of web project is being packaged — its frontend framework, its build tool and the way it calls APIs — so that every later generation step works from detected fact rather than a guess.
+
 ## ADDED Requirements
 
 ### Requirement: Detect frontend framework

@@ -1,4 +1,9 @@
-## ADDED Requirements
+# build-pipeline Specification
+
+## Purpose
+Turns a scaffolded Wails project into a signed, distributable macOS DMG: one source of truth for the version, a generated build script, signing performed in the order macOS requires, and the Info.plist the bundle needs.
+
+## Requirements
 
 ### Requirement: Single source of truth for version
 The system SHALL use `package.json` version field as the single source of truth. The build script SHALL read the version from `package.json` and synchronize it to `wails.json` before building.

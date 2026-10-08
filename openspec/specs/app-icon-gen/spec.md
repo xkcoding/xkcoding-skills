@@ -1,4 +1,9 @@
-## ADDED Requirements
+# app-icon-gen Specification
+
+## Purpose
+Produces macOS application icons that conform to the platform's canvas specification, carrying a design from a parameterizable SVG template through to the ICNS file the build consumes.
+
+## Requirements
 
 ### Requirement: Follow macOS icon canvas specification
 The system SHALL generate app icons conforming to the macOS icon specification: 1024x1024 canvas, 112px padding on each side, 800x800 background rectangle starting at (112, 112), corner radius rx=179 ry=179.
