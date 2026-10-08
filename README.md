@@ -195,7 +195,7 @@ xkcoding-skills/
 - [ ] **desktop-kit P2** — CHANGELOG -> appcast、更多框架检测
 - [x] **session-insights MVP** — 会话数据提取、Mermaid 报告生成、summary/detailed 模式
 - [x] **session-insights 并行分析** — 分批并行 + 后台执行 + 进度反馈
-- [x] **autoresearch MVP** — 外部 runner、三种 harness、打分器契约、静态报告、两个示例研究
+- [x] **autoresearch MVP** — 外部 runner、三种 harness、打分器契约、静态报告、四个示例研究（toy / kata / compress / retrieval）
 - [ ] **autoresearch P1** — 接真实项目的打分器（DRR 召回率 / 召准率 / GT 资产选用率）
 
 ## License
