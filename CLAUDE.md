@@ -62,7 +62,7 @@
 把一个可度量的长期目标交给会话之外的循环：`scripts/ar.py` 作为独立进程驱动每一轮——组装 prompt → 拉起无状态 harness（`claude` / `codex` / `shell`）→ 边界检查 → gate → score → commit → keep / discard / crash / error → 不是 keep 就 `git revert` → 记账 → 报告。定义（`research.json` + `subjects/<name>/{program.md,score,gate}`）放目标仓库里并对 agent 锁定，账本放仓库旁的 `<research>.ar/`。打分器自报版本，只在同版本内比较；`remaining` 是下一轮的状态载体。
 
 **结构**：
-- `autoresearch/SKILL.md` — 定位、子命令、三条原则、init 的八步（含开循环前的手跑验证）、run、读进度（status 字段 → 含义）、人工介入、agent 每轮看到什么、技术事实
+- `autoresearch/SKILL.md` — 定位、子命令、三条原则、init 七步、run、读进度、人工介入、示例、退出、技术事实（只留会改变会话做法的）
 - `autoresearch/scripts/ar.py` — 循环本身（纯 Python 标准库，兼容 3.9），子命令 `doctor` / `init` / `run` / `status` / `report` / `example`；运行锁、未知键拒绝、坏 checkpoint 拒绝
 - `autoresearch/scripts/report.py` — 账本 → 单文件 HTML 报告（内嵌 JSON + SVG，无外部依赖）
 - `autoresearch/references/` — `scorer-guide.md`（契约、开循环前手跑三次、五个真实的坑）、`known-behaviors.md`（claude / codex / GLM / git 的实测行为，带日期与版本）
