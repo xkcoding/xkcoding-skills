@@ -11,6 +11,9 @@ Exit code: 0 = done, 1 = refused or failed (see "error"), 2 = usage.
                                            drive rounds until a stop condition; the loop itself
   status [<subject>] [--repo DIR]          every subject's summary, rebuilt from the checkpoints
   report [--repo DIR]                      regenerate <research>.ar/report/index.html
+  serve [--repo DIR] [--port N] [--no-open]
+                                           serve the report at http://127.0.0.1:<port>/, re-read
+                                           from the ledger on every request; the page polls it
   example <name> <dir>                     generate a self-contained research to try the loop on
                                            (<name> is a directory under examples/)
 
@@ -533,7 +536,8 @@ class Ledger(object):
         write_json(os.path.join(self.root, "research.snapshot.json"), {
             "name": cfg["name"], "description": cfg["description"], "direction": cfg["direction"],
             "subjects": [{"name": s["name"], "depends_on": s["depends_on"],
-                          "harness": s["harness"]["type"], "limits": subject_limits(s)}
+                          "harness": s["harness"]["type"],
+                          "timeout_sec": s["harness"]["timeout_sec"], "limits": subject_limits(s)}
                          for s in cfg["subjects"]],
             "at": now_iso(),
         })
@@ -976,6 +980,8 @@ def do_round(cfg, sub, repo, ledger, log, baseline=False):
 
     settle_tree(sub, repo, log)
     log("round #{} {} ({})".format(n, cid, "baseline" if baseline else sub["harness"]["type"]))
+    mark_round(ledger, n, cid)
+    safe_report(cfg, ledger, repo, log)
     if baseline:
         rec["note"] = "Baseline measured on HEAD; the harness was not invoked."
     else:
@@ -1050,6 +1056,11 @@ def do_round(cfg, sub, repo, ledger, log, baseline=False):
     git(["add", "-A"], repo)
     git(["commit", "--allow-empty", "-m", "ar {}".format(cid)], repo)
     rec["commit"] = head_sha(repo)
+    if changed:
+        # "What did #17 change" is the question the report answers most often; the sha alone
+        # answers it only for someone with the repository open.
+        shown = git(["show", "--format=", "--stat", "-p", rec["commit"]], repo, check=False)
+        write_text(os.path.join(artdir, "changes.patch"), shown.stdout or "")
 
     if rec["status"] is None:
         same_version = idx.get("version") in (None, rec["version"])
@@ -1237,6 +1248,56 @@ def release_run_lock(ledger, run_id):
             pass
 
 
+def mark_round(ledger, n, cid):
+    """Note in run.lock which round is in progress and since when, so a report rendered
+    mid-round shows a clock that is right instead of a guess from the last checkpoint."""
+    info = read_json(ledger.lock_path())
+    if isinstance(info, dict) and info.get("pid") == os.getpid():
+        info.update({"round": n, "checkpoint": cid, "round_started": now_iso()})
+        write_json(ledger.lock_path(), info)
+
+
+def run_info(ledger):
+    """What the report shows about a run in progress: nothing, or the live lock's facts."""
+    live = active_run(ledger)
+    if not live:
+        return {}
+    return {"running": True, "subject": live.get("subject"), "run_id": live.get("run_id"),
+            "pid": live.get("pid"), "since": live.get("started"), "round": live.get("round"),
+            "round_started": live.get("round_started")}
+
+
+def serve_lock_path(ledger):
+    return os.path.join(ledger.root, "serve.lock")
+
+
+def active_serve(ledger):
+    """The `serve` process holding serve.lock, if it is still alive; a dead pid reads as none."""
+    info = read_json(serve_lock_path(ledger))
+    if not isinstance(info, dict) or not isinstance(info.get("pid"), int):
+        return None
+    try:
+        os.kill(info["pid"], 0)
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return None
+    return info
+
+
+def serve_url(ledger):
+    live = active_serve(ledger)
+    return live.get("url") if live else None
+
+
+def release_serve_lock(ledger):
+    info = read_json(serve_lock_path(ledger))
+    if isinstance(info, dict) and info.get("pid") == os.getpid():
+        try:
+            os.remove(serve_lock_path(ledger))
+        except OSError:
+            pass
+
+
 def cmd_run(args):
     repo = repo_root(args.repo)
     cfg = load_research(repo)
@@ -1279,6 +1340,8 @@ def run_rounds(args, repo, cfg, sub, ledger, run_id, stale_lock):
     if stale_lock:
         log("replaced a stale run.lock left by {} (pid {} is gone)".format(
             stale_lock.get("run_id"), stale_lock.get("pid")))
+    if serve_url(ledger):
+        log("live report: {}".format(serve_url(ledger)))
     idx = preflight(cfg, sub, repo, ledger, log)
     window = unknown_window_warning(sub)
     if window:
@@ -1325,16 +1388,10 @@ def run_rounds(args, repo, cfg, sub, ledger, run_id, stale_lock):
             baseline_needed = False
         else:
             rounds_left = rounds_left - 1 if rounds_left is not None else None
-        try:
-            write_report(cfg, ledger)
-        except Exception as exc:  # noqa: BLE001 - a broken report must not stop the loop
-            log("  report failed: {}: {}".format(type(exc).__name__, exc))
+        safe_report(cfg, ledger, repo, log)
 
     idx = ledger.rebuild_index(sub["name"], cfg["direction"], subject_limits(sub))
-    try:
-        write_report(cfg, ledger)
-    except Exception as exc:  # noqa: BLE001
-        log("  report failed: {}: {}".format(type(exc).__name__, exc))
+    safe_report(cfg, ledger, repo, log)
     log("stopped: {} — {} round(s) this run — best {} ({}) — report {}".format(
         stopped, len(done), fmt_score(idx["best"]), idx.get("version"), ledger.report_path()))
     log_fh.close()
@@ -1342,7 +1399,7 @@ def run_rounds(args, repo, cfg, sub, ledger, run_id, stale_lock):
             "rounds": [{"id": r["id"], "n": r["n"], "status": r["status"], "score": r["score"],
                         "version": r["version"], "reason": r["reason"]} for r in done],
             "index": idx, "run_log": ledger.run_log(run_id),
-            "report": ledger.report_path()}, 0
+            "report": ledger.report_path(), "url": serve_url(ledger)}, 0
 
 
 # ------------------------------------------------------------------- status, report
@@ -1362,11 +1419,22 @@ def summary_line(subject, records, idx):
         totals["error"], fmt_score(idx.get("best")), best_n, span, idx.get("updated_at") or "never")
 
 
-def subject_state(cfg, ledger, sub):
+def subject_state(cfg, ledger, sub, repo=None, rebuild=True):
     records = ledger.checkpoints(sub["name"])
-    idx = ledger.rebuild_index(sub["name"], cfg["direction"], subject_limits(sub))
-    return {"subject": sub["name"], "summary": summary_line(sub["name"], records, idx),
-            "index": idx, "checkpoints": records}
+    limits = subject_limits(sub)
+    idx = (ledger.rebuild_index if rebuild else ledger.index)(sub["name"], cfg["direction"], limits)
+    state = {"subject": sub["name"], "summary": summary_line(sub["name"], records, idx),
+             "index": idx, "checkpoints": records, "limits": limits,
+             "depends_on": sub["depends_on"], "harness": sub["harness"]["type"],
+             "timeout_sec": sub["harness"]["timeout_sec"],
+             "unreadable": ledger.unreadable(sub["name"])}
+    if repo:
+        # The next run re-measures HEAD as a new baseline when the scorer file changed since
+        # the best checkpoint - say so before it happens.
+        state["scorer_changed_since_best"] = bool(
+            idx.get("best_id") and
+            idx.get("scorer_sha") != sha_of(os.path.join(repo, sub["score"])))
+    return state
 
 
 def cmd_status(args):
@@ -1376,28 +1444,39 @@ def cmd_status(args):
     ledger = Ledger(cfg["ar_dir"])
     out = []
     for sub in subs:
-        state = subject_state(cfg, ledger, sub)
+        state = subject_state(cfg, ledger, sub, repo)
         missing = check_subject_files(repo, sub)
-        idx = state["index"]
-        out.append({"subject": sub["name"], "summary": state["summary"], "index": idx,
-                    "harness": sub["harness"]["type"], "depends_on": sub["depends_on"],
-                    "runnable": not missing, "missing": missing,
-                    "unreadable": ledger.unreadable(sub["name"]),
-                    # The next run re-measures HEAD as a new baseline when the scorer file
-                    # changed since the best checkpoint - say so before it happens.
-                    "scorer_changed_since_best": bool(
-                        idx.get("best_id") and
-                        idx.get("scorer_sha") != sha_of(os.path.join(repo, sub["score"])))})
+        entry = {k: v for k, v in state.items() if k not in ("checkpoints", "timeout_sec")}
+        entry.update({"runnable": not missing, "missing": missing})
+        out.append(entry)
     return {"ok": True, "research": cfg["name"], "ar_dir": cfg["ar_dir"],
             "branch": current_branch(repo), "report": ledger.report_path(),
-            "active_run": active_run(ledger), "subjects": out}, 0
+            "url": serve_url(ledger), "active_run": active_run(ledger), "subjects": out}, 0
 
 
-def write_report(cfg, ledger):
+def report_cfg(cfg):
+    return {"name": cfg["name"], "description": cfg["description"],
+            "direction": cfg["direction"], "ar_dir": cfg["ar_dir"]}
+
+
+def report_states(cfg, ledger, repo=None):
+    # Derived, not rebuilt: `serve` renders on every request while a run may be writing the
+    # index, and two writers on index.json would be a race for nothing.
+    return [subject_state(cfg, ledger, sub, repo, rebuild=False) for sub in cfg["subjects"]]
+
+
+def write_report(cfg, ledger, repo=None):
     sys.path.insert(0, SCRIPT_DIR)
     import report as report_mod
-    states = [subject_state(cfg, ledger, sub) for sub in cfg["subjects"]]
-    return report_mod.write_report(ledger.report_path(), cfg, states)
+    return report_mod.write_report(ledger.report_path(), report_cfg(cfg),
+                                   report_states(cfg, ledger, repo), run_info(ledger))
+
+
+def safe_report(cfg, ledger, repo, log):
+    try:
+        write_report(cfg, ledger, repo)
+    except Exception as exc:  # noqa: BLE001 - a broken report must not stop the loop
+        log("  report failed: {}: {}".format(type(exc).__name__, exc))
 
 
 def cmd_report(args):
@@ -1405,9 +1484,87 @@ def cmd_report(args):
     cfg = load_research(repo)
     ledger = Ledger(cfg["ar_dir"])
     ledger.snapshot(cfg)
-    path = write_report(cfg, ledger)
-    return {"ok": True, "report": path,
-            "open": "open {}".format(path)}, 0
+    path = write_report(cfg, ledger, repo)
+    url = serve_url(ledger)
+    return {"ok": True, "report": path, "url": url, "open": "open {}".format(url or path)}, 0
+
+
+def cmd_serve(args):
+    """Serve the report at a fixed local URL, re-rendered from the ledger on every request,
+    with /data.json for the page to poll. Runs until SIGINT / SIGTERM. The URL is printed
+    first, so a caller that backgrounds this can pick it up from the first line."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import webbrowser
+    repo = repo_root(args.repo)
+    cfg = load_research(repo)
+    ledger = Ledger(cfg["ar_dir"])
+    ledger.snapshot(cfg)
+    live = active_serve(ledger)
+    if live:
+        raise Refusal("a server for this research is already running at {} (pid {}); open that, "
+                      "or stop it first".format(live.get("url"), live.get("pid")),
+                      url=live.get("url"))
+    sys.path.insert(0, SCRIPT_DIR)
+    import report as report_mod
+
+    def page():
+        return report_mod.render(report_cfg(cfg), report_states(cfg, ledger, repo),
+                                 run_info(ledger))
+
+    def data():
+        return json.dumps(report_mod.report_data(report_cfg(cfg), report_states(cfg, ledger, repo),
+                                                 run_info(ledger)), ensure_ascii=False)
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            path = self.path.split("?", 1)[0]
+            try:
+                if path in ("/", "/index.html"):
+                    body, ctype = page().encode("utf-8"), "text/html; charset=utf-8"
+                elif path == "/data.json":
+                    body, ctype = data().encode("utf-8"), "application/json; charset=utf-8"
+                else:
+                    self.send_error(404)
+                    return
+            except Exception as exc:  # noqa: BLE001 - the page must say so, not the socket
+                self.send_error(500, "{}: {}".format(type(exc).__name__, exc))
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    except OSError as exc:
+        raise Refusal("cannot listen on 127.0.0.1:{}: {}. Pick another --port, or stop whatever "
+                      "holds it".format(args.port, exc.strerror or exc), port=args.port)
+    url = "http://127.0.0.1:{}/".format(args.port)
+    write_json(serve_lock_path(ledger), {"pid": os.getpid(), "port": args.port, "url": url,
+                                         "research": cfg["name"], "started": now_iso()})
+    print(json.dumps({"ok": True, "url": url, "pid": os.getpid(), "research": cfg["name"],
+                      "stop": "send SIGINT or SIGTERM to pid {}".format(os.getpid())},
+                     ensure_ascii=False, indent=2), flush=True)
+    if not args.no_open:
+        webbrowser.open(url)
+
+    def stop(*_sig):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, stop)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+        release_serve_lock(ledger)
+    return None, 0
 
 
 # ---------------------------------------------------------------------- doctor/init
@@ -1778,6 +1935,11 @@ def build_parser():
 
     subs.add_parser("report", parents=[common], help="regenerate the report")
 
+    sv = subs.add_parser("serve", parents=[common],
+                         help="serve the report at a local URL, re-read from the ledger")
+    sv.add_argument("--port", type=int, default=7788)
+    sv.add_argument("--no-open", action="store_true", help="do not open a browser tab")
+
     ex = subs.add_parser("example", help="generate a research to try the loop on")
     ex.add_argument("which", choices=example_names() or ["toy", "kata"],
                     help="one of the directories under examples/")
@@ -1802,7 +1964,7 @@ def main(argv):
     except SystemExit as exc:  # --help printed itself
         return 2 if exc.code else 0
     handlers = {"doctor": cmd_doctor, "init": cmd_init, "run": cmd_run, "status": cmd_status,
-                "report": cmd_report, "example": cmd_example}
+                "report": cmd_report, "serve": cmd_serve, "example": cmd_example}
     if args.cmd not in handlers:
         print(json.dumps({"ok": False, "error": "unknown subcommand {!r}".format(args.cmd)},
                          ensure_ascii=False))
@@ -1820,7 +1982,8 @@ def main(argv):
         out = {"ok": False, "error": "{}: {}".format(type(exc).__name__, exc),
                "traceback": traceback.format_exc().splitlines()[-6:]}
         code = 1
-    print(json.dumps(out, ensure_ascii=False, indent=2))
+    if out is not None:  # serve prints its one object up front, before it blocks
+        print(json.dumps(out, ensure_ascii=False, indent=2))
     return code
 
 

@@ -26,7 +26,7 @@ Before starting a round the runner SHALL verify that the working tree is clean, 
 - **THEN** `run cases` refuses and names the file, and `status` lists it under `unreadable`
 
 ### Requirement: One run per research
-A run SHALL hold `<ledger>/run.lock` recording its pid, run id, subject and start time, and SHALL remove it on exit. A second `run` on the same research SHALL be refused while the recorded pid is alive, naming that run's id, subject and pid. A lock whose pid no longer exists is stale: the new run SHALL replace it and say so in its log. `status` SHALL report a live lock as `active_run`.
+A run SHALL hold `<ledger>/run.lock` recording its pid, run id, subject and start time, plus the round number, checkpoint id and start time of the round in progress once one starts, and SHALL remove it on exit. A second `run` on the same research SHALL be refused while the recorded pid is alive, naming that run's id, subject and pid. A lock whose pid no longer exists is stale: the new run SHALL replace it and say so in its log. `status` SHALL report a live lock as `active_run`.
 
 #### Scenario: Second run while one is active
 - **WHEN** `run impl` is invoked while `run cases` is still running
@@ -48,7 +48,7 @@ When a subject has no best checkpoint, or its `score` file differs from the one 
 - **THEN** `status` reported `scorer_changed_since_best` beforehand, HEAD is measured once with no harness call, and the runner exits
 
 ### Requirement: Round phases in fixed order
-A round SHALL proceed: build prompt → run harness → boundary check → gate → score → commit → decide outcome → revert when required → write checkpoint → regenerate report → evaluate stop conditions. Each of agent, gate and score SHALL be timed and recorded in `timings_ms`.
+A round SHALL proceed: note the round in `run.lock` and regenerate the report → build prompt → run harness → boundary check → gate → score → commit → save the round's patch → decide outcome → revert when required → write checkpoint → regenerate report → evaluate stop conditions. Each of agent, gate and score SHALL be timed and recorded in `timings_ms`.
 
 #### Scenario: Normal keep
 - **WHEN** the harness exits 0, no locked path changed, gate passes, and the score exceeds the best under the same version

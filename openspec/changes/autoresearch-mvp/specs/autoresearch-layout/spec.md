@@ -65,6 +65,20 @@ Every round, including the baseline, SHALL produce one JSON file `researches/<su
 - **WHEN** a round crashes at the gate
 - **THEN** its record has `status: "crash"`, `score: null`, a non-empty `reason`, and `reverted_by` set to the revert commit unless the round commit was empty
 
+### Requirement: The round's patch is kept with its artifacts
+After the round commit, when the agent changed anything, the runner SHALL save `git show` of that commit (stat and patch) as `artifacts/<subject>/<checkpoint-id>/changes.patch`, so the report can show what a round changed without the repository.
+
+#### Scenario: Round that edited one file
+- **WHEN** round 17 changed `codec.py` and was committed
+- **THEN** `artifacts/codec/codec-17-<hex>/changes.patch` holds the diff of that commit
+
+### Requirement: A serve process is recorded in the ledger
+`serve` SHALL hold `<ledger>/serve.lock` with its pid, port and URL while it runs and SHALL remove it on exit; `status`, `run` and `report` SHALL report the URL as `url` while the pid is alive and `null` otherwise.
+
+#### Scenario: Status while served
+- **WHEN** `serve --port 7788` is running for the research
+- **THEN** `status` returns `"url": "http://127.0.0.1:7788/"`
+
 ### Requirement: Subject index is derivable
 Each subject SHALL have `researches/<subject>/index.json` holding only derived summary state (next round number, best score and id, current version, consecutive discard and error counts, stop reason, totals). Deleting it and re-running `status` SHALL reconstruct identical content from the checkpoint files.
 

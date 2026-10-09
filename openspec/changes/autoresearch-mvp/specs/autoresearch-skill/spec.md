@@ -7,7 +7,7 @@ Describes the skill that lets a person set up a research, start and supervise th
 ## ADDED Requirements
 
 ### Requirement: Sub-commands
-The skill SHALL route `init`, `run`, `status`, `report`, `doctor` and `example`. `init` SHALL scaffold a research definition; `run` SHALL start the runner for one subject; `status` SHALL summarise every subject from the ledger; `report` SHALL regenerate and locate the report; `doctor` SHALL check the environment; `example` SHALL generate a sample research. Invoking the skill without a sub-command SHALL read the status when a research exists and start `init` otherwise.
+The skill SHALL route `init`, `run`, `serve`, `status`, `report`, `doctor` and `example`. `init` SHALL scaffold a research definition; `run` SHALL start the runner for one subject; `status` SHALL summarise every subject from the ledger; `report` SHALL regenerate and locate the report; `serve` SHALL start a local server that renders the report from the ledger on every request and refuse a second server for the same research; `doctor` SHALL check the environment; `example` SHALL generate a sample research. Invoking the skill without a sub-command SHALL read the status when a research exists and start `init` otherwise.
 
 #### Scenario: Bare invocation in a repository with a research
 - **WHEN** `/autoresearch` is invoked in a repository containing `autoresearch/research.json`
@@ -43,7 +43,7 @@ During `init` the skill SHALL walk the person through the questions that determi
 
 #### Scenario: Background run
 - **WHEN** the person asks to run 20 rounds in the background
-- **THEN** the runner is started detached, the log path under `<research>.ar/runs/` is shown, and the session returns immediately
+- **THEN** the runner and `serve` are started detached, the report URL and the log path under `<research>.ar/runs/` are shown, and the session returns immediately
 
 ### Requirement: Doctor checks by executing
 `doctor` SHALL determine the availability of `python3`, `git`, `claude` and `codex` by executing their version commands, SHALL report the repository state (clean tree, branch, presence of a research definition), SHALL warn when a subject's `claude` harness sets `ANTHROPIC_BASE_URL` and an `ANTHROPIC_MODEL` Claude Code does not recognise without `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (Claude Code then assumes a 200K window and compacts the round at that size), and SHALL only report; it SHALL NOT install, log in or create anything.
