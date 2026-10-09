@@ -417,6 +417,32 @@ def resolve_env(harness_env):
     return out
 
 
+MODEL_ALIASES = ("opus", "sonnet", "haiku", "default", "opusplan")
+
+
+def unknown_window_warning(sub):
+    """claude -p assumes a 200k context window for a model name it does not know (2.1.295:
+    modelUsage.contextWindow 200000 for glm-5.3) and compacts the round at that size, however
+    large the real window is. CLAUDE_CODE_MAX_CONTEXT_TOKENS declares the real one; a [1m]
+    suffix on the name is the other spelling the CLI understands."""
+    h = sub["harness"]
+    if h["type"] != "claude" or h.get("model"):
+        return None
+    try:
+        env = harness_env(os.environ, resolve_env(h["env"]))
+    except Refusal:
+        return None
+    model = env.get("ANTHROPIC_MODEL") or ""
+    low = model.lower()
+    if not env.get("ANTHROPIC_BASE_URL") or not model or low.startswith("claude-") \
+            or low in MODEL_ALIASES or "[1m]" in low or env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS"):
+        return None
+    return ("subject {}: ANTHROPIC_MODEL={} is not a name Claude Code knows, so it assumes a "
+            "200000-token context window and compacts the round at that size; set "
+            "CLAUDE_CODE_MAX_CONTEXT_TOKENS in harness.env to the model's real window".format(
+                sub["name"], model))
+
+
 def pick_subject(cfg, name):
     for sub in cfg["subjects"]:
         if sub["name"] == name:
@@ -1254,6 +1280,9 @@ def run_rounds(args, repo, cfg, sub, ledger, run_id, stale_lock):
         log("replaced a stale run.lock left by {} (pid {} is gone)".format(
             stale_lock.get("run_id"), stale_lock.get("pid")))
     idx = preflight(cfg, sub, repo, ledger, log)
+    window = unknown_window_warning(sub)
+    if window:
+        log("warning: " + window)
     ledger.snapshot(cfg)
 
     if args.dry_prompt:
@@ -1434,6 +1463,10 @@ def cmd_doctor(args):
                 except Refusal as exc:
                     entry["env"] = str(exc)
                     problems.append("subject {}: {}".format(sub["name"], exc))
+                window = unknown_window_warning(sub)
+                if window:
+                    entry["warning"] = window
+                    warnings.append(window)
                 if missing:
                     problems.append("subject {}: {}".format(sub["name"], "; ".join(
                         "{} {} is {}".format(m["what"], m["path"], m["why"]) for m in missing)))
@@ -1547,7 +1580,10 @@ RESEARCH_TEMPLATE = {
         "_doc_command": "shell harness only: the command to run, prompt arrives on stdin.",
         "env": {},
         "_doc_env": "Passed to the harness process. \"$NAME\" is read from your environment at "
-                    "launch, so API keys never land in this file.",
+                    "launch, so API keys never land in this file. Third-party Anthropic-compatible "
+                    "endpoint: ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN (\"$KEY\"), ANTHROPIC_MODEL "
+                    "(not harness.model), and CLAUDE_CODE_MAX_CONTEXT_TOKENS set to the model's "
+                    "real context window - Claude Code assumes 200000 for a name it does not know.",
     },
     "subjects": [],
 }

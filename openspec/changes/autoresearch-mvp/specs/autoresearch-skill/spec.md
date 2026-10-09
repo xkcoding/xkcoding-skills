@@ -46,11 +46,15 @@ During `init` the skill SHALL walk the person through the questions that determi
 - **THEN** the runner is started detached, the log path under `<research>.ar/runs/` is shown, and the session returns immediately
 
 ### Requirement: Doctor checks by executing
-`doctor` SHALL determine the availability of `python3`, `git`, `claude` and `codex` by executing their version commands, SHALL report the repository state (clean tree, branch, presence of a research definition), and SHALL only report; it SHALL NOT install, log in or create anything.
+`doctor` SHALL determine the availability of `python3`, `git`, `claude` and `codex` by executing their version commands, SHALL report the repository state (clean tree, branch, presence of a research definition), SHALL warn when a subject's `claude` harness sets `ANTHROPIC_BASE_URL` and an `ANTHROPIC_MODEL` Claude Code does not recognise without `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (Claude Code then assumes a 200K window and compacts the round at that size), and SHALL only report; it SHALL NOT install, log in or create anything.
 
 #### Scenario: Codex not installed
 - **WHEN** `codex` is absent
 - **THEN** doctor reports it as unavailable and still reports `claude` as available if it runs
+
+#### Scenario: Endpoint model without a declared window
+- **WHEN** `harness.env` sets `ANTHROPIC_BASE_URL` and `ANTHROPIC_MODEL=glm-5.3` and neither `CLAUDE_CODE_MAX_CONTEXT_TOKENS` nor a `[1m]` suffix is given
+- **THEN** doctor lists a warning naming the subject and the variable to set, and `ok` stays true
 
 ### Requirement: Human intervention is through files, not the session
 To change the research direction the skill SHALL direct the person to edit `program.md`, and to change what is measured to edit `score` and bump its reported version; it SHALL explain that the runner picks up both at the next round and that a version bump starts a new comparison baseline.

@@ -17,8 +17,9 @@
 
 ## 第三方 Anthropic 兼容端点
 
-- (2026-10-08, Claude Code 2.1.294, GLM 5.3) `ANTHROPIC_BASE_URL`（GLM：`https://open.bigmodel.cn/api/anthropic`）+ `ANTHROPIC_AUTH_TOKEN` 两个变量就够；`harness.env` 里写 `"$VAR"`，变量没设 runner 拒绝启动。
+- (2026-10-08, Claude Code 2.1.294, GLM 5.3) 跑起来只要 `ANTHROPIC_BASE_URL`（GLM：`https://open.bigmodel.cn/api/anthropic`）+ `ANTHROPIC_AUTH_TOKEN`；`harness.env` 里写 `"$VAR"`，变量没设 runner 拒绝启动。
 - (2026-10-08, 2.1.294) 模型名必须走 `ANTHROPIC_MODEL`：`--model glm-5.3` 被 `[claude-code:unrecognized_model]` 直接拒绝；设了环境变量、不传 `--model`，同一行在 stderr 出现一次但轮次正常。
+- (2026-10-10, 2.1.295, GLM 5.3) **不认识的模型名按 200k 窗口处理**：`-p` 输出的 `modelUsage.<model>` 里 `contextWindow: 200000`、`maxOutputTokens: 32000`，轮内上下文到这个量级就自动压缩，而 GLM 5.3 的真实窗口是 1M。两种改法实测都让 `contextWindow` 变成 1000000：`harness.env` 加 `CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1000000"`（Claude Code 官方文档给网关 / 自定义模型 ID 的变量，2.1.193 起；名字不含 `[1m]` 时直接生效），或 `ANTHROPIC_MODEL=glm-5.3[1m]`（智谱官方接入文档的写法，配 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000`；端点接受这个名字）。`doctor` 对"配了端点、模型名 Claude Code 不认识、又没声明窗口"的 subject 给 warning。
 - (2026-10-08, GLM 5.3) usage 同样四个字段；一轮 181 秒、input 213k（订阅上同一轮 18–36 秒、input 6）。`total_cost_usd` 是按 Anthropic 价格的估算，不是端点账单，`max_budget_usd` 在这里不是真正的上限。
 
 ## git
@@ -40,3 +41,4 @@
 - MiniMax 等其它兼容端点：只试过 GLM；模型名处理是最可能不同的一处，先核它，stderr 第一行会说认不认。
 - 长时间无人值守的限流：没碰到；碰到时 harness 非零退出、记 error，连续 `max_consecutive_errors` 次就停。
 - `error_max_turns` / `error_max_budget_usd` 以外的 `is_error` 子类型：没见过；runner 一律记 error，reason 带原文。
+- `CLAUDE_CODE_MAX_OUTPUT_TOKENS`：官方文档说不认识的模型默认 32000、上限 128000；设成 128000 后 `modelUsage.maxOutputTokens` 仍报 32000（2026-10-10, 2.1.295），没看请求体，不知道实际生效没有。

@@ -109,7 +109,7 @@ rm -rf ../<name>.ar
 
 当提示，不当保证；不符以眼前为准，再更新 `references/known-behaviors.md`。
 
-- (2026-10-08, Claude Code 2.1.294) 第三方 Anthropic 兼容端点（GLM 等）：`harness.env` 给 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`，模型名走 `ANTHROPIC_MODEL`，**不要配 `harness.model`**（`--model glm-5.3` 会被拒）。`total_cost_usd` 是按 Anthropic 价格的估算，在端点上不是账单。
+- (2026-10-10, Claude Code 2.1.295) 第三方 Anthropic 兼容端点（GLM 等）：`harness.env` 给 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_MODEL` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS`（模型的真实窗口，GLM 5.3 是 `"1000000"`；不给，Claude Code 对不认识的名字按 200k 算，轮内会提前压缩），**不要配 `harness.model`**（`--model glm-5.3` 会被拒）。`total_cost_usd` 是按 Anthropic 价格的估算，在端点上不是账单。
 - (2026-10-08, 2.1.294) 一轮的代价差一个数量级：kata 这种平凡轮次约 $0.4、25 秒；compress 这种要真干活的轮次 opus $3.2 / 7 分钟，sonnet $0.3 / 2 分钟。放后台前先和用户对一次预算。
 
 ## References 索引
