@@ -43,7 +43,11 @@ The `codex` adapter SHALL invoke `codex exec` non-interactively with the workspa
 - **THEN** the checkpoint's `note` is that file's content and `harness.type` is `codex`
 
 ### Requirement: Shell adapter
-The `shell` adapter SHALL run the command configured in `research.json` with the prompt on stdin and the repository root as working directory, so that the loop can be exercised without any model and custom executors can be plugged in.
+The `shell` adapter SHALL run the command configured in `research.json` with the prompt on stdin and the repository root as working directory, so that the loop can be exercised without any model and custom executors can be plugged in. When the command's stdout is Claude Code's JSON output — one object, or a `stream-json` event stream whose last `type: result` object carries the same fields — the adapter SHALL take the result text, usage, session id, turn count, cost and model from it exactly as the `claude` adapter does; otherwise the agent's text is the tail of stdout.
+
+#### Scenario: Wrapper around claude -p with stream-json
+- **WHEN** the shell command prints a stream-json event stream ending in a `type: result` line
+- **THEN** the checkpoint's `note` is that line's `result`, its usage numbers are filled, and `harness.model` is the model named in `modelUsage`
 
 #### Scenario: Toy executor
 - **WHEN** the shell command is a script that edits one file and exits 0

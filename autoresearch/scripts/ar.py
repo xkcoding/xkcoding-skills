@@ -669,6 +669,38 @@ def harness_env(base_env, extra):
     return env
 
 
+def claude_result(stdout):
+    """The final result object of a Claude Code -p run, whatever the output format: one JSON
+    object (--output-format json) or a stream of events (stream-json, as a shell wrapper may
+    well ask for) whose last `type: result` line carries the same fields. None when there is
+    no such object. Scanning 40k lines of thinking_tokens events is a few milliseconds."""
+    s = (stdout or "").strip()
+    if not s:
+        return None
+    if s.startswith("{") and s.endswith("}") and "\n" not in s:
+        try:
+            obj = json.loads(s)
+        except ValueError:
+            obj = None
+        if isinstance(obj, dict) and ("result" in obj or obj.get("type") == "result"):
+            return obj
+    found = None
+    for line in s.splitlines():
+        line = line.strip()
+        # Key order is not stable across versions ("type" is not first on 2.1.295's
+        # stream-json result line), so look anywhere in the line before parsing it.
+        if not line.startswith("{") or ('"type":"result"' not in line and
+                                        '"type": "result"' not in line):
+            continue
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and obj.get("type") == "result":
+            found = obj
+    return found
+
+
 def run_harness(h, prompt, repo, artdir, log):
     """One stateless invocation. Returns a dict the round records verbatim."""
     prompt_path = os.path.join(artdir, "prompt.md")
@@ -715,18 +747,20 @@ def run_harness(h, prompt, repo, artdir, log):
     text = tail(stdout, 40, 4000) or tail(stderr, 40, 4000)
     failure = reason
 
-    if h["type"] == "claude":
-        parsed = None
-        try:
-            parsed = json.loads(stdout.strip() or "{}")
-        except ValueError:
-            parsed = None
-        if isinstance(parsed, dict) and parsed:
+    if h["type"] in ("claude", "shell"):
+        # A shell harness is usually someone's own wrapper around `claude -p`; when its
+        # stdout is Claude Code's JSON, the round gets the same facts as the claude adapter.
+        parsed = claude_result(stdout)
+        if parsed:
             text = parsed.get("result") or text
             result["session_id"] = parsed.get("session_id")
             result["turns"] = parsed.get("num_turns")
             result["cost_usd"] = parsed.get("total_cost_usd")
             result["subtype"] = parsed.get("subtype")
+            models = parsed.get("modelUsage") or {}
+            if models and not result.get("model"):
+                result["model"] = next(iter(models))
+                result["context_window"] = (models[result["model"]] or {}).get("contextWindow")
             u = parsed.get("usage") or {}
             usage = {"input": u.get("input_tokens"), "output": u.get("output_tokens"),
                      "cache_read": u.get("cache_read_input_tokens"),
@@ -738,7 +772,7 @@ def run_harness(h, prompt, repo, artdir, log):
                     log("harness stopped by {}; measuring what it left behind".format(subtype))
                 else:
                     failure = "harness_error:" + subtype
-        elif code == 0 and not failure:
+        elif h["type"] == "claude" and code == 0 and not failure:
             failure = "harness_output_not_json"
     elif h["type"] == "codex":
         text = read_text(last_msg, "") or text

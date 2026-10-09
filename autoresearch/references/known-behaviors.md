@@ -8,6 +8,7 @@
 - (2026-10-08, 2.1.294) **`--max-turns` / `--max-budget-usd` 触发时**：`is_error: true`、`subtype` 为 `error_max_turns` / `error_max_budget_usd`、`result: null`、**进程退出码 1**，stdout 仍是完整 JSON、usage 齐全。runner 把这两种当作"上限起作用了"，照常 gate、打分，`harness.cut_off` 记下是哪个。预算按 CLI 的客户端估价算，`--max-budget-usd 0.01` 一轮实际记了 $0.76——第一次 API 调用之后才判定。
 - (2026-10-08, 2.1.294) `-p --output-format json` 返回：`result`、`usage.{input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens}`、`num_turns`、`session_id`、`is_error`、`subtype`、`total_cost_usd`、`stop_reason`。
 - (2026-10-08, 2.1.294) `CLAUDECODE=1` 的环境里 `claude -p` 照常运行。adapter 仍去掉 `CLAUDECODE` / `CLAUDE_CODE_SSE_PORT` / `CLAUDE_CODE_ENTRYPOINT`——它们描述的是父会话，不是为了绕开某个故障。
+- (2026-10-10, 2.1.295) **用 shell harness 自己包 `claude -p --output-format stream-json --verbose`**：一轮 8.4 MB、39091 行事件，其中 38745 行是 `system/thinking_tokens`；最后一行是 `type: result`，字段和 `--output-format json` 一样，但键序不同（`duration_api_ms` 在前，`type` 不在行首）。runner 对 claude 和 shell 两种 harness 都从 stdout 里找最后一个 `type: result` 对象取 result 文本、usage、session、费用、模型名和 `contextWindow`；找不到时 shell 的 note 退回 stdout 尾巴。同一轮里出现过两个 `result` 行（两个 `init`），取最后一个。
 - (2026-10-08, 2.1.294) prompt 缓存跨进程只命中一小部分：连续两个新进程，第二个 cache_read 约 11–14k、cache_write 约 37–41k。带不带 `--exclude-dynamic-system-prompt-sections` 没有可测的差别，仍然传。稳定前缀的收益在轮内（turn 2..n 读 turn 1 写的缓存）。
 
 ## Codex（`codex`）

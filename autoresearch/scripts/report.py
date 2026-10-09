@@ -62,7 +62,9 @@ TEMPLATE = r"""<!doctype html>
 /* ===== 基础层 ===== */
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0;background:var(--ar-bg)}
-body{color:var(--ar-fg);font:400 var(--ar-text-body)/22px var(--ar-font);letter-spacing:var(--ar-tracking);-webkit-font-smoothing:antialiased}
+body{color:var(--ar-fg);font:400 var(--ar-text-body)/22px var(--ar-font);letter-spacing:var(--ar-tracking);-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
+/* grid 子项默认 min-width:auto，会被一行长 token 撑到比列宽还宽，整页横向溢出 */
+.grid-2>*,.detail>*,.surface>*,.action .grow,.page-head .grow{min-width:0}
 h1,h2,h3,h4,p,ul,ol,dl,dd,pre{margin:0;padding:0}
 ul,ol{list-style:none}
 button{font:inherit;letter-spacing:inherit;color:inherit;cursor:pointer;background:none;border:0;padding:0}
@@ -158,8 +160,6 @@ table{border-collapse:collapse;width:100%}
 .action.is-bad .ico{color:var(--ar-danger)}
 .action .grow{flex:1;min-width:0}
 .action .t-note{margin-top:2px}
-.action .bar{width:160px;height:6px;border-radius:var(--ar-r-pill);background:var(--ar-surface-sunken);overflow:hidden}
-.action .bar>i{display:block;height:100%;background:var(--ar-accent);border-radius:inherit}
 /* ===== 结局矩阵（一轮一格） ===== */
 .matrix{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
 .cell{width:18px;height:18px;border-radius:5px;display:block;cursor:pointer;border:1px solid transparent;transition:transform var(--ar-dur-fast) var(--ar-ease)}
@@ -175,7 +175,7 @@ table{border-collapse:collapse;width:100%}
 /* ===== 图表 ===== */
 .ec{height:440px}
 /* ===== 说明 / remaining / diff ===== */
-.prose{white-space:pre-wrap;line-height:22px;color:var(--ar-fg)}
+.prose{white-space:pre-wrap;line-height:22px;color:var(--ar-fg);max-width:100%}
 .prose.clipped{max-height:132px;overflow:hidden}
 .list-rem li{position:relative;padding-left:16px;margin:6px 0;line-height:20px}
 .list-rem li::before{content:'';position:absolute;left:2px;top:8px;width:5px;height:5px;border-radius:50%;background:var(--ar-fg-faint)}
@@ -208,7 +208,7 @@ pre.diff .p{display:block}
 <script id="ar-data" type="application/json">@@DATA@@</script>
 <script>
 let D = JSON.parse(document.getElementById('ar-data').textContent);
-const LIVE = /^https?:$/.test(location.protocol);
+let LIVE = /^https?:$/.test(location.protocol);  // turns false if the server has no data.json
 const NET = {ok: LIVE, at: Date.now()};
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const CHART = {line: css('--ar-chart-line'), keep: css('--ar-chart-keep'), discard: css('--ar-chart-discard'), crash: css('--ar-chart-crash'), error: css('--ar-chart-error'), grid: css('--ar-chart-grid'), band: css('--ar-chart-band'), bandAlt: css('--ar-chart-band-alt'), metric: css('--ar-chart-metric'), muted: css('--ar-fg-faint'), fg: css('--ar-fg'), surface: css('--ar-surface')};
@@ -272,11 +272,11 @@ function action(s) {
   const cps = s.checkpoints, last = cps[cps.length - 1];
   const out = [];
   if (run.running && run.round_started) {
-    const med = median(cps.filter(c => c.n > 0).map(c => c.timings_ms && c.timings_ms.agent));
     const age = Date.now() - Date.parse(run.round_started);
     const stale = !LIVE && age > ((s.timeout_sec || 1800) + 120) * 1000;
+    const lastAgent = last && last.n > 0 && last.timings_ms && last.timings_ms.agent;
     if (stale) out.push(`<div class="action is-bad"><span class="ico">⚑</span><div class="grow"><div>第 #${run.round} 轮开始于 ${F.ago(run.round_started)}，超过了 timeout_sec，之后没有更新</div><div class="t-note">上次 run 可能没有正常结束；用 ar status 确认，或重新生成报告</div></div></div>`);
-    else out.push(`<div class="action is-run"><span class="ico">●</span><div class="grow"><div>第 <b>#${run.round}</b> 轮进行中，已 <b class="num" id="elapsed" data-since="${esc(run.round_started)}" data-med="${med || 0}">${F.dur(age)}</b>${med >= 1000 ? ` <span class="t-muted">· 每轮中位 ${F.dur(med)}</span>` : ''}</div><div class="t-note">${last ? `上一轮 #${last.n} ${last.status}${isNum(last.score) ? '，' + F.score(last.score) : ''}，${F.ago(last.at)}` : '这是第一轮'}</div></div><div class="bar"><i id="elapsed-bar" style="width:${med ? Math.min(100, age / med * 100).toFixed(0) : 0}%"></i></div></div>`);
+    else out.push(`<div class="action is-run"><span class="ico">●</span><div class="grow"><div>第 <b>#${run.round}</b> 轮进行中，已 <b class="num" id="elapsed" data-since="${esc(run.round_started)}">${F.dur(age)}</b>${s.timeout_sec ? ` <span class="t-muted">· 上限 ${F.dur(s.timeout_sec * 1000)}</span>` : ''}</div><div class="t-note">${last ? `上一轮 #${last.n} ${last.status}${isNum(last.score) ? '，' + F.score(last.score) : ''}${lastAgent >= 1000 ? '，agent 用了 ' + F.dur(lastAgent) : ''}，${F.ago(last.at)}` : '这是第一轮'}</div></div></div>`);
   } else if (run.running) {
     out.push(`<div class="action is-run"><span class="ico">●</span><div class="grow"><div>run 已启动，正在准备第一轮</div></div></div>`);
   } else if (idx.stopped_reason) {
@@ -381,7 +381,7 @@ function nowAndRemaining(s) {
     left = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${tagOf(last)}<span class="num" style="font-weight:600">${isNum(last.score) ? F.score(last.score) : '未评分'}</span>${isNum(last.score) ? `<span class="${dcls(delta(last))} num">${fmtDelta(delta(last))}</span>` : ''}<span class="t-note">${F.dur(last.timings_ms && last.timings_ms.agent)} · ${F.money(last.harness && last.harness.cost_usd)} · ${F.ago(last.at)}</span></div>
       <div style="margin-top:12px">${(last.changed_files || []).length ? last.changed_files.map(f => `<span class="code">${esc(f)}</span>`).join('') : '<span class="t-note">没有改动文件</span>'}</div>
       ${last.reason ? `<div class="reason" style="margin-top:12px">${esc(last.reason)}</div>` : ''}
-      <div class="prose clipped" id="lastnote" style="margin-top:12px">${esc(last.note || 'agent 没有留下说明')}</div><button class="link t-ctrl" data-unclip="lastnote" style="margin-top:8px">展开全文</button>`;
+      <div class="prose clipped" id="lastnote" style="margin-top:12px">${esc(last.note || 'agent 没有留下说明')}</div><button class="link t-ctrl" data-unclip="lastnote" style="margin-top:8px">展开全文</button>${last.note_extracted ? '<div class="t-note" style="margin-top:6px">从 harness 的 JSON 输出里提取的 result</div>' : ''}`;
   }
   const rem = (best && best.remaining) || [];
   const right = !best ? '<p class="t-muted">尚无最佳轮次。</p>' : !rem.length ? '<p class="t-muted">打分器没有列出待改进项。remaining 为空时，下一轮没有可执行的目标；可以调整评分标准，或结束这项研究。</p>' : `<ul class="list-rem">${rem.slice(0, 8).map(r => `<li>${esc(r)}</li>`).join('')}</ul>${rem.length > 8 ? `<button class="link t-ctrl" data-more="rem-all" style="margin-top:8px">展开全部 ${rem.length} 项</button><ul class="list-rem" id="rem-all" hidden>${rem.slice(8).map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}`;
@@ -408,7 +408,7 @@ function detail(s, c) {
     <dt>harness</dt><dd>${esc(h.type || '—')}${h.model ? ' · ' + esc(h.model) : ''}${isNum(h.turns) ? ' · ' + h.turns + ' turn' : ''} · ${F.money(h.cost_usd)}${h.cut_off ? ' · 被 ' + esc(h.cut_off) + ' 截断' : ''}</dd>
     <dt>git</dt><dd><span class="t-mono">${F.sha(c.commit)}</span>${c.reverted_by ? ' · 已撤回 <span class="t-mono">' + F.sha(c.reverted_by) + '</span>' : ''} · 打分器 v${esc(c.version || '—')}</dd>
     <dt>产物目录</dt><dd><a href="file://${esc(c.artifacts)}/" class="t-mono" style="font-size:12px">${esc(c.artifacts)}/</a></dd></dl>`;
-  return `<div class="detail"><div><div class="blk"><h4 class="t-sub">agent 说明</h4><div class="prose">${esc(c.note || 'agent 没有留下说明')}</div></div><div class="blk"><h4 class="t-sub">改动</h4>${changes}</div></div>
+  return `<div class="detail"><div><div class="blk"><h4 class="t-sub">agent 说明</h4><div class="prose">${esc(c.note || 'agent 没有留下说明')}</div>${c.note_extracted ? '<div class="t-note" style="margin-top:6px">从 harness 的 JSON 输出里提取的 result</div>' : ''}</div><div class="blk"><h4 class="t-sub">改动</h4>${changes}</div></div>
     <div><div class="blk"><h4 class="t-sub">分数构成${pb ? `<span class="t-note" style="font-weight:400;margin-left:8px">相对上一个最佳 #${pb.n}</span>` : ''}</h4>${comp}</div><div class="blk"><h4 class="t-sub">执行信息</h4>${proc}</div></div></div>`;
 }
 function rounds(s) {
@@ -441,7 +441,7 @@ document.addEventListener('click', e => {
 });
 setInterval(() => {
   const el = document.getElementById('elapsed');
-  if (el) { const ms = Date.now() - Date.parse(el.dataset.since); el.textContent = F.dur(ms); const med = Number(el.dataset.med); const bar = document.getElementById('elapsed-bar'); if (bar && med) bar.style.width = Math.min(100, ms / med * 100).toFixed(0) + '%'; }
+  if (el) el.textContent = F.dur(Date.now() - Date.parse(el.dataset.since));
   const la = document.getElementById('live-ago'); if (la) la.textContent = F.ago(new Date(NET.at).toISOString());
 }, 1000);
 const fingerprint = d => JSON.stringify([d.run, d.states.map(s => [s.index, s.checkpoints.length, s.scorer_changed_since_best, s.unreadable])]);
@@ -449,6 +449,7 @@ async function poll() {
   let changed = false;
   try {
     const r = await fetch('data.json', {cache: 'no-store'});
+    if (r.status === 404) { LIVE = false; render(); return; }  // a plain file server, not ar serve
     if (!r.ok) throw new Error(r.status);
     const next = await r.json();
     changed = fingerprint(next) !== fingerprint(D) || !NET.ok;
@@ -491,6 +492,19 @@ def echarts_source():
     return _ECHARTS
 
 
+def readable_note(note):
+    """Rounds recorded before the adapter understood stream-json hold the raw tail of the
+    event stream as their note; when the result line survived in that tail, show its text."""
+    if not note or '"type"' not in note:
+        return note, False
+    sys.path.insert(0, SCRIPT_DIR)
+    import ar
+    obj = ar.claude_result(note)
+    if obj and isinstance(obj.get("result"), str) and obj["result"].strip():
+        return obj["result"], True
+    return note, False
+
+
 def report_data(cfg, states, run=None, generated=None):
     """The JSON the page renders from. `states` are what ar.py's subject_state() returns
     (plus limits / depends_on / harness / timeout_sec / scorer_changed_since_best / unreadable
@@ -506,6 +520,7 @@ def report_data(cfg, states, run=None, generated=None):
             patch = read_text(os.path.join(art, "changes.patch"))
             c["patch"] = (patch[:PATCH_CAP] or None) if patch else None
             c["patch_truncated"] = bool(patch) and len(patch) > PATCH_CAP
+            c["note"], c["note_extracted"] = readable_note(c.get("note"))
             cps.append(c)
         st = {k: v for k, v in s.items() if k != "checkpoints"}
         st["checkpoints"] = cps
