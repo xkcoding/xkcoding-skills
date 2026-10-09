@@ -7,7 +7,7 @@ Defines where a research lives on disk: the definition directory inside the targ
 ## ADDED Requirements
 
 ### Requirement: A research is defined inside the target repository
-A research SHALL be defined by `autoresearch/research.json` in the target repository root, declaring the research name, a description, harness defaults, and an ordered list of subjects. Each subject SHALL have a directory `autoresearch/subjects/<name>/` containing `program.md`, an executable `score`, and an executable `gate`. The runner SHALL refuse to start when any of these is missing and SHALL name the missing item.
+A research SHALL be defined by `autoresearch/research.json` in the target repository root, declaring the research name, a description, the score `direction` (`max` by default, or `min`), harness defaults, and an ordered list of subjects. Keys the runner does not know SHALL be refused with the unknown and the accepted keys named, except keys starting with `_`, which are documentation and SHALL be ignored. Each subject SHALL have a directory `autoresearch/subjects/<name>/` containing `program.md`, an executable `score`, and an executable `gate`. The runner SHALL refuse to start when any of these is missing and SHALL name the missing item.
 
 #### Scenario: Complete definition
 - **WHEN** `research.json` lists subject `cases` and `autoresearch/subjects/cases/` contains `program.md`, `score` and `gate`
@@ -16,6 +16,10 @@ A research SHALL be defined by `autoresearch/research.json` in the target reposi
 #### Scenario: Missing gate
 - **WHEN** `autoresearch/subjects/cases/gate` does not exist or is not executable
 - **THEN** the runner refuses to run `cases` and reports `gate` as missing
+
+#### Scenario: Misspelt stop condition
+- **WHEN** a subject carries `max_consecutive_discard` (singular)
+- **THEN** the runner refuses to start, names the key and lists the keys it accepts
 
 ### Requirement: The ledger lives beside the repository
 All checkpoint records, per-round artifacts, run logs and the report SHALL be written under `<research-name>.ar/` located in the parent directory of the repository root, unless `research.json` sets `ar_dir`. The runner SHALL NOT write any file into the repository other than through the agent's own changes and the commits it creates.

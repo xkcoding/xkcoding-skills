@@ -7,7 +7,7 @@ Specifies how one round runs and ends: the phase order, the three outcomes plus 
 ## ADDED Requirements
 
 ### Requirement: Preconditions before a round
-Before starting a round the runner SHALL verify that the working tree is clean, that the current branch is `research/<research-name>` (creating it from HEAD when absent), and that every subject listed in the subject's `depends_on` has at least one kept checkpoint. A working tree whose only changes are under `autoresearch/` SHALL be committed by the runner as `ar scorer <subject>` before the round starts; any other dirty state SHALL stop the runner with the offending paths listed.
+Before starting a round the runner SHALL verify that the working tree is clean, that the current branch is `research/<research-name>` (creating it from HEAD when absent), that every checkpoint file in the subject's ledger parses, and that every subject listed in the subject's `depends_on` has at least one kept checkpoint. A working tree whose only changes are under `autoresearch/` SHALL be committed by the runner as `ar scorer <subject>` before the round starts; any other dirty state SHALL stop the runner with the offending paths listed.
 
 #### Scenario: Scorer edited by hand
 - **WHEN** the only uncommitted change is `autoresearch/subjects/cases/score`
@@ -21,12 +21,31 @@ Before starting a round the runner SHALL verify that the working tree is clean, 
 - **WHEN** `impl` declares `depends_on: ["cases"]` and `cases` has no kept checkpoint
 - **THEN** the runner refuses to run `impl` and says which dependency is unmet
 
+#### Scenario: Unreadable checkpoint
+- **WHEN** a file under `researches/cases/` other than `index.json` is not a JSON object with an integer `n`
+- **THEN** `run cases` refuses and names the file, and `status` lists it under `unreadable`
+
+### Requirement: One run per research
+A run SHALL hold `<ledger>/run.lock` recording its pid, run id, subject and start time, and SHALL remove it on exit. A second `run` on the same research SHALL be refused while the recorded pid is alive, naming that run's id, subject and pid. A lock whose pid no longer exists is stale: the new run SHALL replace it and say so in its log. `status` SHALL report a live lock as `active_run`.
+
+#### Scenario: Second run while one is active
+- **WHEN** `run impl` is invoked while `run cases` is still running
+- **THEN** `run impl` refuses and names the active run's subject and pid
+
+#### Scenario: Stale lock after SIGKILL
+- **WHEN** the previous runner was killed with SIGKILL and its pid is gone
+- **THEN** the next `run` replaces the lock, logs the stale run id, and goes on to the other preconditions
+
 ### Requirement: Baseline round
-When a subject has no checkpoint under the scorer's current version, the runner SHALL first run gate and score on HEAD without invoking the harness and record it as round 0 (or the next round number after a version switch) with status `keep`. A failing gate at baseline SHALL stop the runner.
+When a subject has no best checkpoint, or its `score` file differs from the one that measured the best, the runner SHALL first run gate and score on HEAD without invoking the harness and record it as round 0 (or the next round number) with status `keep`. This baseline SHALL be taken even when `--rounds 0` is given or a stop condition is already met, so that `--rounds 0` means "re-measure HEAD now". A failing gate at baseline SHALL stop the runner.
 
 #### Scenario: First run
 - **WHEN** `run cases` is invoked on a subject with no checkpoints
 - **THEN** checkpoint `cases-0-<hex>` is recorded from HEAD before any harness call and becomes the best
+
+#### Scenario: Scorer edited since the best
+- **WHEN** `score` was changed and committed after the best checkpoint and `run cases --rounds 0` is invoked
+- **THEN** `status` reported `scorer_changed_since_best` beforehand, HEAD is measured once with no harness call, and the runner exits
 
 ### Requirement: Round phases in fixed order
 A round SHALL proceed: build prompt → run harness → boundary check → gate → score → commit → decide outcome → revert when required → write checkpoint → regenerate report → evaluate stop conditions. Each of agent, gate and score SHALL be timed and recorded in `timings_ms`.
@@ -54,11 +73,15 @@ The runner SHALL commit all changes after the harness with `--allow-empty` and t
 - **THEN** an empty commit `ar <id>` is created, no revert is made, and the checkpoint status is `discard`
 
 ### Requirement: Outcome decision
-Under the same scorer version, a score strictly greater than the best SHALL be `keep`; equal or lower SHALL be `discard`. A gate failure or boundary violation SHALL be `crash`. A scorer failure SHALL be `error`. `error` SHALL NOT increment the consecutive-discard counter, and `keep` SHALL reset both the consecutive-discard and consecutive-error counters.
+Under the same scorer version, a score strictly better than the best SHALL be `keep`; equal or worse SHALL be `discard`. `research.json` `direction` decides which way is better: `max` (the default) or `min`. A gate failure or boundary violation SHALL be `crash`. A scorer failure SHALL be `error`. `error` SHALL NOT increment the consecutive-discard counter, and `keep` SHALL reset both the consecutive-discard and consecutive-error counters.
 
 #### Scenario: Equal score
 - **WHEN** the score equals the best exactly
 - **THEN** the outcome is `discard`
+
+#### Scenario: Minimising research
+- **WHEN** `direction` is `min`, the best is 28275 and the round scores 27869
+- **THEN** the outcome is `keep`
 
 #### Scenario: Scorer broken twice
 - **WHEN** two consecutive rounds end in `error`
@@ -72,7 +95,7 @@ When the version reported by the scorer differs from the version of the current 
 - **THEN** the round is `keep` and the best becomes 140.3 under `5.1.0`
 
 ### Requirement: Stop conditions
-The runner SHALL stop after a round when any configured condition is met: `max_rounds`, `max_consecutive_discards`, `max_consecutive_errors`, `target_score` reached or exceeded, `budget.minutes` elapsed since the run started, or `budget.tokens` exceeded by the sum of all usage fields recorded in this run. The reason SHALL be written to the subject index and printed.
+The runner SHALL stop after a round when any configured condition is met: `max_rounds`, `max_consecutive_discards`, `max_consecutive_errors`, `target_score` reached or exceeded, `budget.minutes` elapsed since the run started, or `budget.tokens` exceeded by the sum of all usage fields recorded in this run. The reason SHALL be written to the subject index and printed. A later `run` on a subject whose index still carries a stop reason SHALL stop at once with that reason unless a baseline is needed; raising the limit in `research.json` lifts it.
 
 #### Scenario: Five discards in a row
 - **WHEN** `max_consecutive_discards` is 5 and the fifth consecutive discard is recorded
@@ -81,6 +104,10 @@ The runner SHALL stop after a round when any configured condition is met: `max_r
 #### Scenario: Token budget
 - **WHEN** the run's accumulated usage exceeds `budget.tokens` after a kept round
 - **THEN** the runner exits with stop reason `budget.tokens` and the kept round remains kept
+
+#### Scenario: Limit raised
+- **WHEN** `cases` stopped with `consecutive_discards` at the limit 5 and `max_consecutive_discards` is then set to 8
+- **THEN** the next `run cases` continues from the subject index instead of stopping again
 
 ### Requirement: Interruption and resumption
 On the first SIGINT the runner SHALL let the current harness finish, complete the round normally, then exit; a second SIGINT SHALL kill the harness process group and exit without recording a checkpoint. A later `run` SHALL resume from the subject index when HEAD equals the best checkpoint's commit or the end of its revert chain, and SHALL refuse with an explanation when the working tree is dirty or HEAD does not match.

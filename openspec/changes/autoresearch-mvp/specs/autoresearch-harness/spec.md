@@ -14,18 +14,22 @@ A harness adapter SHALL accept a prompt, a working directory, a timeout and an e
 - **THEN** the round's usage fields are all null and the round is otherwise processed normally
 
 ### Requirement: Each round is a fresh, stateless invocation
-The harness SHALL be started as a new process for every round with only the round's prompt as input. The runner SHALL NOT pass conversation history, session ids or transcripts from earlier rounds; all state the agent needs SHALL be in the prompt (program, rules, best checkpoint details and remaining items, recent round summaries).
+The harness SHALL be started as a new process for every round with only the round's prompt as input. The runner SHALL NOT pass conversation history, session ids or transcripts from earlier rounds; all state the agent needs SHALL be in the prompt (program, rules, best checkpoint details and remaining items, recent round summaries including the reason of any crashed or errored round).
 
 #### Scenario: Second round
 - **WHEN** round 2 starts
 - **THEN** a new harness process is spawned and its prompt references round 1 only through the ledger-derived summary
 
 ### Requirement: Claude Code adapter
-The `claude` adapter SHALL invoke the Claude Code CLI in non-interactive mode with JSON output and a configured maximum number of turns, SHALL remove the `CLAUDECODE` variable from the child environment, and SHALL take `usage`, the final text, the session id, turn count and error flag from the JSON output. A non-JSON stdout or an error flag SHALL be reported as a harness failure with the raw output preserved.
+The `claude` adapter SHALL invoke the Claude Code CLI in non-interactive mode with JSON output, passing `max_turns`, `model` and `max_budget_usd` from `research.json` when set, SHALL remove the parent session's `CLAUDECODE` variable from the child environment, and SHALL take `usage`, the final text, the session id, turn count, cost, subtype and error flag from the JSON output. A non-JSON stdout SHALL be a harness failure with the raw output preserved. An error flag whose subtype is `error_max_turns` or `error_max_budget_usd` means one of the CLI's own caps tripped: the round SHALL still go through boundary check, gate and score, with the subtype recorded as `harness.cut_off`, even though the CLI exits non-zero in that case. Any other error flag SHALL be a harness failure.
 
 #### Scenario: Successful round with Claude Code
 - **WHEN** the CLI exits 0 with a JSON object containing usage and result
 - **THEN** the checkpoint records the four usage numbers, the session id and the result text as `note`
+
+#### Scenario: Round cut off by the turn cap
+- **WHEN** the CLI exits 1 with `is_error: true` and `subtype: "error_max_turns"`
+- **THEN** the round is measured as usual, the checkpoint has `harness.cut_off: "error_max_turns"`, and its outcome is `keep` or `discard` by score, not `error`
 
 #### Scenario: Nested invocation
 - **WHEN** the runner itself was started from inside a Claude Code session
@@ -67,5 +71,5 @@ Every adapter SHALL start the harness in its own process group and, when `timeou
 The harness's full stdout and stderr and the exact prompt SHALL be saved under the round's artifact directory before the outcome is decided.
 
 #### Scenario: Harness crashed
-- **WHEN** the harness exits non-zero
+- **WHEN** the harness exits non-zero without reporting a cut-off
 - **THEN** `harness.out` and `prompt.md` exist in the round's artifact directory and the checkpoint has outcome `error` with the exit code in `harness.exit`
