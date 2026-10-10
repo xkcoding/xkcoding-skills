@@ -36,7 +36,11 @@ The `claude` adapter SHALL invoke the Claude Code CLI in non-interactive mode wi
 - **THEN** the child process does not inherit `CLAUDECODE` and starts normally
 
 ### Requirement: Codex adapter
-The `codex` adapter SHALL invoke `codex exec` non-interactively with the workspace-write sandbox, the repository root as working directory, JSON event output, and the final message written to a file that the adapter reads as the agent's text. Token usage SHALL be filled when the events contain it and left null otherwise. The doctor SHALL warn that an untrusted repository makes codex exit at startup.
+The `codex` adapter SHALL invoke `codex exec` non-interactively with the workspace-write sandbox, the repository root as working directory, JSON event output, and the final message written to a file that the adapter reads as the agent's text. Token usage SHALL be filled when the events contain it and left null otherwise. The doctor SHALL warn that an untrusted repository makes codex exit at startup. When the runner itself is inside a Codex sandbox (`CODEX_SANDBOX` set), `run`, `status`, `report` and `serve` SHALL refuse up front, naming the sandbox and the way out, because the sandbox forbids writing `.git` and the ledger and a nested `codex exec` cannot start; `doctor` SHALL report it as a problem.
+
+#### Scenario: Runner started from inside a Codex session
+- **WHEN** `run cases` is executed by Codex's shell tool under its default sandbox
+- **THEN** the runner refuses before calling any harness, with `codex_sandbox` in the refusal
 
 #### Scenario: Codex round
 - **WHEN** `codex exec` exits 0 and writes the last message file

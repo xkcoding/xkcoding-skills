@@ -1171,6 +1171,22 @@ def commit_definition(sub, repo, log):
     return head_sha(repo)
 
 
+def codex_sandbox():
+    """The Codex sandbox this process runs in, if any. Observed on codex-cli 0.162.1 (macOS
+    seatbelt): CODEX_SANDBOX=seatbelt, CODEX_SANDBOX_NETWORK_DISABLED=1; writes to .git and to
+    anything outside the workspace are refused, and a nested `codex exec` cannot start."""
+    return os.environ.get("CODEX_SANDBOX") or None
+
+
+def refuse_in_codex_sandbox(what):
+    sb = codex_sandbox()
+    if sb:
+        raise Refusal("{} cannot run inside a Codex sandbox ({}): the sandbox refuses writes to "
+                      ".git and to the ledger beside the repository, and a harness started from "
+                      "here has no network. Start it from a terminal outside Codex, or run Codex "
+                      "with --sandbox danger-full-access.".format(what, sb), codex_sandbox=sb)
+
+
 def preflight(cfg, sub, repo, ledger, log):
     """Everything that must be true before a round starts, checked in order."""
     missing = check_subject_files(repo, sub)
@@ -1334,6 +1350,7 @@ def release_serve_lock(ledger):
 
 
 def cmd_run(args):
+    refuse_in_codex_sandbox("run")
     repo = repo_root(args.repo)
     cfg = load_research(repo)
     sub = pick_subject(cfg, args.subject)
@@ -1473,6 +1490,7 @@ def subject_state(cfg, ledger, sub, repo=None, rebuild=True):
 
 
 def cmd_status(args):
+    refuse_in_codex_sandbox("status (it rewrites the subject index)")
     repo = repo_root(args.repo)
     cfg = load_research(repo)
     subs = [pick_subject(cfg, args.subject)] if args.subject else cfg["subjects"]
@@ -1515,6 +1533,7 @@ def safe_report(cfg, ledger, repo, log):
 
 
 def cmd_report(args):
+    refuse_in_codex_sandbox("report")
     repo = repo_root(args.repo)
     cfg = load_research(repo)
     ledger = Ledger(cfg["ar_dir"])
@@ -1530,6 +1549,7 @@ def cmd_serve(args):
     first, so a caller that backgrounds this can pick it up from the first line."""
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     import webbrowser
+    refuse_in_codex_sandbox("serve")
     repo = repo_root(args.repo)
     cfg = load_research(repo)
     ledger = Ledger(cfg["ar_dir"])
@@ -1624,6 +1644,11 @@ def cmd_doctor(args):
     if tools["codex"]["available"]:
         warnings.append("codex exits at startup in a directory it has not been trusted in; "
                         "run `codex` once in the target repository and accept the trust prompt")
+    if codex_sandbox():
+        problems.append("this shell is inside a Codex sandbox ({}): run / status / report / serve "
+                        "refuse here because .git and the ledger are not writable and a nested "
+                        "codex cannot start; use a terminal outside Codex or --sandbox "
+                        "danger-full-access".format(codex_sandbox()))
 
     repo_info = {"repo": None, "branch": None, "clean": None, "head": None}
     research = {"defined": False}
