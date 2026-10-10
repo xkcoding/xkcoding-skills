@@ -15,6 +15,7 @@
 
 - (2026-10-08, codex-cli 0.156.1) `codex exec <prompt> --json -o FILE -s workspace-write -C DIR --skip-git-repo-check` 在全新仓库里无需 trust 弹层。事件流 `thread.started`（`thread_id`）→ `turn.started` → `item.*` → `turn.completed`；usage 在 `turn.completed`：`input_tokens`、`cached_input_tokens`、`cache_write_input_tokens`、`output_tokens`，没有费用字段。同一个平凡 prompt 56 秒、input 76.5k，比 Claude Code 慢且输入重。
 - (2026-09-18, 0.154–0.155) 未受信任目录下用 `--add-dir` 会让 codex 启动即退出；adapter 不传 `--add-dir`。
+- (2026-10-10, codex-cli 0.162.1, ChatGPT 登录, config 里 model gpt-6-astra / reasoning high) **`example kata` 切到 codex harness 直接通**：`cases` 第 1 轮 63 秒、input 76.9k（cache_read 63.1k）、output 1.2k、改 7 个文件、0 → 13.4 分 keep；`impl`（依赖 cases）按依赖检查放行，第 1 轮 62 秒、input 99.8k、一次写出 `src/qs.py` 让 6/6 用例通过。事件流与 0.156.1 相同（`thread.started` → `turn.started` → `item.*` → `turn.completed`），`turn.completed.usage` 多了 `reasoning_output_tokens`，仍没有费用字段。stderr 固定有一行 `Reading additional input from stdin...`——runner 给的 stdin 是 /dev/null，立即 EOF，无害；自己在终端里直接跑 `codex exec` 不带 stdin 重定向会等输入。`harness.model` 为 null：codex 的模型来自它自己的 config，adapter 不传也不读。
 
 ## 第三方 Anthropic 兼容端点
 

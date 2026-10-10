@@ -738,7 +738,8 @@ def run_harness(h, prompt, repo, artdir, log):
         cmd += list(h.get("args") or [])
         stdin_path = prompt_path
 
-    log("harness {}: {}".format(h["type"], " ".join(cmd[:3]) + (" …" if len(cmd) > 3 else "")))
+    shown = ["<prompt>" if a == prompt else a for a in cmd]
+    log("harness {}: {}".format(h["type"], " ".join(shown[:4]) + (" …" if len(shown) > 4 else "")))
     t0 = time.time()
     code, reason = spawn(cmd, repo, env, out_path, err_path, stdin_path, h["timeout_sec"])
     result["exit"] = code
