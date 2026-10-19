@@ -34,12 +34,12 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/ar.py" <子命令> … --repo <目标仓库
 | 输入 | 做什么 |
 |---|---|
 | 不带子命令 | `status`：有 research 就[读进度](#读进度)，没有就走 [init](#init) |
-| `init [--subject S …] [--harness claude\|codex\|shell]` | 出骨架 → [init](#init) |
+| `init [--subject S …] [--harness claude\|codex\|pi\|goose\|shell]` | 出骨架 → [init](#init) |
 | `run <subject> [--rounds N] [--dry-prompt]` | 跑循环 → [run](#run)；`--dry-prompt` 只打印下一轮的 prompt |
 | `status [<subject>]` | [读进度](#读进度) |
 | `serve [--port N] [--no-open]` | 起本地服务，报告在固定 URL 上自己刷新 → [run](#run) |
 | `report` | 重新生成静态报告；有 serve 在跑时输出里带它的 `url` |
-| `doctor` | 只读体检：工具版本、仓库状态、定义是否齐全、`harness.env` 的变量是否已设。`problems` 非空先解决，**不替用户安装或登录** |
+| `doctor` | 只读体检：工具版本、仓库状态、定义是否齐全、每个 subject 的 harness 能否起来。`problems` 非空先解决，**不替用户安装、登录或配模型** |
 | `example toy\|kata\|compress\|retrieval <dir>` | 生成示例 research → [示例](#示例) |
 
 ## 原则
@@ -57,7 +57,7 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/ar.py" <子命令> … --repo <目标仓库
 3. **写 `score` 并手跑三次验证**，按 `references/scorer-guide.md`——契约、`remaining` 怎么导出、怎么验灵敏度和一轮能推多少，都在那里。
 4. **写 `program.md`**：只写这个 subject 特有的目标、材料、度量方式、约束；"一轮一个方向、不 commit、不碰锁定路径、结束自述"这些规则 runner 每轮自己加。
 5. **`gate`**：快而便宜的一票否决（编译、lint、冒烟）；没有就留 `exit 0`。
-6. **`research.json`**：每个键旁有 `_doc`。两处容易误解：`locked` 是强制（改到即 crash，`autoresearch/**` 永远在），`editable` 只是进 prompt 的提示；`harness.env` 写 `"$VAR"`，key 不进仓库。拼错的键会被拒绝。
+6. **`research.json`**：每个键旁有 `_doc`。两处容易误解：`locked` 是强制（改到即 crash，`autoresearch/**` 永远在），`editable` 只是进 prompt 的提示。`harness.type`：Anthropic 模型用 `claude`，GLM 等第三方模型用 `pi` 或 `goose`；模型与 key 在工具里配（pi `/login`，`goose configure`），runner 不碰，`research.json` 里也没有它们的位置。拼错的键会被拒绝。
 7. **`doctor` → `run <subject> --dry-prompt`**（给用户看 agent 每轮看到的全部；这一步会建并切到 `research/<name>` 分支）→ **`run <subject> --rounds 1`** 前台跑一轮（先在 HEAD 测基线 #0，再跑 #1），和用户一起读报告里 #1 的分数、`remaining`、改了哪些文件，都对了才放后台。
 
 ## run
@@ -110,13 +110,13 @@ rm -rf ../<name>.ar
 
 当提示，不当保证；不符以眼前为准，再更新 `references/known-behaviors.md`。
 
-- (2026-10-10, Claude Code 2.1.295) 第三方 Anthropic 兼容端点（GLM 等）：`harness.env` 给 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_MODEL` + `CLAUDE_CODE_MAX_CONTEXT_TOKENS`（模型的真实窗口，GLM 5.3 是 `"1000000"`；不给，Claude Code 对不认识的名字按 200k 算，轮内会提前压缩），**不要配 `harness.model`**（`--model glm-5.3` 会被拒）。`total_cost_usd` 是按 Anthropic 价格的估算，在端点上不是账单。
-- (2026-10-08, 2.1.294) 一轮的代价差一个数量级：kata 这种平凡轮次约 $0.4、25 秒；compress 这种要真干活的轮次 opus $3.2 / 7 分钟，sonnet $0.3 / 2 分钟。放后台前先和用户对一次预算。
+- (2026-10-19, pi 1.3.0 / goose 1.55.0) 第三方模型（GLM 等）走 `pi` 或 `goose`，`claude` 只接 Anthropic。pi 没有轮数和费用上限，只靠 `timeout_sec`；goose 只有轮数上限。
+- 一轮的代价差一个数量级：(2026-10-08, Claude Code 2.1.294) kata 这种平凡轮次约 $0.4、25 秒；compress 这种要真干活的轮次 opus $3.2 / 7 分钟，sonnet $0.3 / 2 分钟。(2026-10-19, glm-5.3) pi / goose 跑 kata 的首轮约 9 分钟、$0.2（客户端估算）。放后台前先和用户对一次预算和 `timeout_sec`。
 
 ## References 索引
 
 | 文件 | 何时加载 |
 |---|---|
 | `references/scorer-guide.md` | init 第 3 步，以及用户任何一次要改"什么算好" |
-| `references/known-behaviors.md` | 外部工具行为可疑（CLI 参数、退出码、token、第三方端点），或要回填新观察 |
+| `references/known-behaviors.md` | 选 harness、定上限和预算之前；外部工具行为和这里写的不符，要回填新观察 |
 | `scripts/vendor/README.md` | 要升级报告里内嵌的 ECharts 时：版本、来源、怎么换 |

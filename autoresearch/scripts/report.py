@@ -308,7 +308,7 @@ function conclusion(s) {
   <div class="stats">
     <div class="stat"><div class="c-label"><span class="hint" title="含 #0 基线">轮次</span></div><div class="v num">${t.checkpoints || 0}</div><div class="s">${t.keep || 0} keep · ${t.discard || 0} discard${t.crash ? ' · ' + t.crash + ' crash' : ''}${t.error ? ' · ' + t.error + ' error' : ''}</div></div>
     <div class="stat"><div class="c-label"><span class="hint" title="连续几轮没有超过最佳；到 max_consecutive_discards 就停">连续 discard</span></div><div class="v num">${idx.consecutive_discards || 0}<small>/ ${(s.limits || {}).max_consecutive_discards || '∞'}</small></div><div class="s">${idx.consecutive_errors ? `连续 error ${idx.consecutive_errors}` : '无 error'}</div></div>
-    <div class="stat"><div class="c-label"><span class="hint" title="Claude Code 按 Anthropic 价格的估算，不是账单">费用</span></div><div class="v num">${F.money(cost)}</div><div class="s">中位 ${F.money(median(rounds.map(c => c.harness && c.harness.cost_usd)))} / 轮</div></div>
+    <div class="stat"><div class="c-label"><span class="hint" title="harness 按自己价格表的估算，不是账单">费用</span></div><div class="v num">${F.money(cost)}</div><div class="s">中位 ${F.money(median(rounds.map(c => c.harness && c.harness.cost_usd)))} / 轮</div></div>
     <div class="stat"><div class="c-label"><span class="hint" title="agent + gate + score 之和">耗时</span></div><div class="v num">${F.dur(time)}</div><div class="s">agent 中位 ${F.dur(median(rounds.map(c => c.timings_ms && c.timings_ms.agent)))} / 轮</div></div>
     <div class="stat"><div class="c-label"><span class="hint" title="输入含缓存读写">Token</span></div><div class="v num">${F.k(outTok)}<small>输出</small></div><div class="s">输入 ${F.k(inTok)}</div></div>
   </div>`;

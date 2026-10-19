@@ -48,14 +48,19 @@ DEF_DIR = "autoresearch"            # the definition directory inside the target
 STATUSES = ("keep", "discard", "crash", "error")
 ALWAYS_LOCKED = DEF_DIR + "/**"     # the scorer is the person's lever; the agent never touches it
 RECENT_ROUNDS = 5
-HARNESS_TYPES = ("claude", "codex", "shell")
+HARNESS_TYPES = ("claude", "codex", "pi", "goose", "shell")
+# The agent CLIs a harness type runs; shell runs whatever harness.command says.
+HARNESS_CLIS = ("claude", "codex", "pi", "goose")
+# Caps pi and goose can actually enforce (pi 1.3.0 has neither flag, goose 1.55.0 has no cost
+# cap). Asking for one they cannot is refused: a cap silently not applied is worse than none on
+# a loop nobody is watching. claude passes both caps to its CLI.
+HARNESS_CAPS = {"pi": (), "goose": ("max_turns",)}
 # claude -p reports these in `subtype` when a cap you asked for stops the agent. That is the cap
 # working, not the harness failing: whatever the agent left in the tree is still measured.
 CUT_OFF_SUBTYPES = ("error_max_turns", "error_max_budget_usd")
 ALLOWED_KEYS = {
     "research": ("name", "description", "ar_dir", "direction", "harness", "subjects"),
-    "harness": ("type", "model", "max_turns", "timeout_sec", "max_budget_usd", "command", "args",
-                "env"),
+    "harness": ("type", "model", "max_turns", "timeout_sec", "max_budget_usd", "command", "args"),
     "subject": ("name", "program", "score", "gate", "editable", "locked", "depends_on",
                 "agent_may_score", "max_rounds", "max_consecutive_discards",
                 "max_consecutive_errors", "target_score", "budget", "recent_rounds", "harness"),
@@ -152,8 +157,14 @@ def reject_unknown(obj, kind, where):
         raise Refusal("{}/research.json: {} must be an object".format(DEF_DIR, where))
     unknown = sorted(k for k in obj if k not in ALLOWED_KEYS[kind])
     if unknown:
-        raise Refusal("{}/research.json: {} has unknown key(s): {}. Allowed: {}".format(
-            DEF_DIR, where, ", ".join(unknown), ", ".join(ALLOWED_KEYS[kind])),
+        hint = ""
+        if kind == "harness" and "env" in unknown:
+            hint = (" harness.env is gone: the runner no longer passes endpoints or keys. Each "
+                    "tool uses its own configuration; for a third-party model set harness.type to "
+                    "\"pi\" or \"goose\" and configure the model and key there (pi: /login, "
+                    "goose: goose configure).")
+        raise Refusal("{}/research.json: {} has unknown key(s): {}. Allowed: {}.{}".format(
+            DEF_DIR, where, ", ".join(unknown), ", ".join(ALLOWED_KEYS[kind]), hint),
             unknown_keys=unknown)
 
 
@@ -368,15 +379,15 @@ def resolve_subject(cfg, raw):
 
 
 def resolve_harness(subject_name, h):
+    htype = h.get("type") or "shell"
     out = {
-        "type": h.get("type") or "shell",
+        "type": htype,
         "model": h.get("model"),
-        "max_turns": h.get("max_turns", 40),
+        "max_turns": h.get("max_turns", 40 if htype in ("claude", "goose") else None),
         "timeout_sec": h.get("timeout_sec", 1800),
         "max_budget_usd": h.get("max_budget_usd"),
         "command": h.get("command"),
         "args": h.get("args") or [],
-        "env": h.get("env") or {},
     }
     if out["type"] not in HARNESS_TYPES:
         raise Refusal("{}/research.json: subject {}: harness.type must be one of {}".format(
@@ -384,9 +395,6 @@ def resolve_harness(subject_name, h):
     if out["type"] == "shell" and not out["command"]:
         raise Refusal("{}/research.json: subject {}: the shell harness needs harness.command".format(
             DEF_DIR, subject_name))
-    if not isinstance(out["env"], dict) or any(not isinstance(v, str) for v in out["env"].values()):
-        raise Refusal("{}/research.json: subject {}: harness.env must be an object of "
-                      "strings".format(DEF_DIR, subject_name))
     if not isinstance(out["timeout_sec"], (int, float)) or out["timeout_sec"] <= 0:
         raise Refusal("{}/research.json: subject {}: harness.timeout_sec must be a positive "
                       "number".format(DEF_DIR, subject_name))
@@ -398,52 +406,26 @@ def resolve_harness(subject_name, h):
                                                   and out["max_budget_usd"] > 0):
         raise Refusal("{}/research.json: subject {}: harness.max_budget_usd must be a positive "
                       "number or null".format(DEF_DIR, subject_name))
+    if out["type"] in ("pi", "goose"):
+        unsupported = [k for k in ("max_turns", "max_budget_usd")
+                       if out[k] is not None and k not in HARNESS_CAPS[out["type"]]]
+        if unsupported:
+            raise Refusal("{}/research.json: subject {}: the {} harness cannot enforce {}; set "
+                          "it to null and rely on harness.timeout_sec".format(
+                              DEF_DIR, subject_name, out["type"], " or ".join(unsupported)),
+                          unsupported=unsupported)
     return out
 
 
-def resolve_env(harness_env):
-    """`$NAME` in harness.env means "take it from my environment" - keys stay out of the repo."""
-    out = {}
-    missing = []
-    for key, val in (harness_env or {}).items():
-        if isinstance(val, str) and re.match(r"^\$[A-Za-z_][A-Za-z0-9_]*$", val):
-            name = val[1:]
-            if name not in os.environ:
-                missing.append(name)
-            else:
-                out[key] = os.environ[name]
-        else:
-            out[key] = val
-    if missing:
-        raise Refusal("harness.env references environment variable(s) that are not set: {}".format(
-            ", ".join(missing)), missing_env=missing)
-    return out
-
-
-MODEL_ALIASES = ("opus", "sonnet", "haiku", "default", "opusplan")
-
-
-def unknown_window_warning(sub):
-    """claude -p assumes a 200k context window for a model name it does not know (2.1.295:
-    modelUsage.contextWindow 200000 for glm-5.3) and compacts the round at that size, however
-    large the real window is. CLAUDE_CODE_MAX_CONTEXT_TOKENS declares the real one; a [1m]
-    suffix on the name is the other spelling the CLI understands."""
-    h = sub["harness"]
-    if h["type"] != "claude" or h.get("model"):
+def endpoint_refusal(sub):
+    """The claude harness drives Anthropic models only. Pointing Claude Code at another
+    endpoint is what ANTHROPIC_BASE_URL does; with no harness.env the child inherits the
+    runner's environment, so that is where to look."""
+    if sub["harness"]["type"] != "claude" or not os.environ.get("ANTHROPIC_BASE_URL"):
         return None
-    try:
-        env = harness_env(os.environ, resolve_env(h["env"]))
-    except Refusal:
-        return None
-    model = env.get("ANTHROPIC_MODEL") or ""
-    low = model.lower()
-    if not env.get("ANTHROPIC_BASE_URL") or not model or low.startswith("claude-") \
-            or low in MODEL_ALIASES or "[1m]" in low or env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS"):
-        return None
-    return ("subject {}: ANTHROPIC_MODEL={} is not a name Claude Code knows, so it assumes a "
-            "200000-token context window and compacts the round at that size; set "
-            "CLAUDE_CODE_MAX_CONTEXT_TOKENS in harness.env to the model's real window".format(
-                sub["name"], model))
+    return ("subject {}: ANTHROPIC_BASE_URL is set, and the claude harness only drives Anthropic "
+            "models. Unset it, or use the pi or goose harness for a third-party model".format(
+                sub["name"]))
 
 
 def pick_subject(cfg, name):
@@ -659,21 +641,21 @@ def spawn(cmd, cwd, env, out_path, err_path, stdin_path=None, timeout_sec=None):
 
 
 
-def harness_env(base_env, extra):
+def harness_env(base_env):
+    """The runner's own environment, minus what describes the session that started it. Models,
+    endpoints and keys are each tool's own configuration; the runner passes none."""
     env = dict(base_env)
     # A nested Claude Code refuses to start normally while this is set.
     env.pop("CLAUDECODE", None)
     env.pop("CLAUDE_CODE_SSE_PORT", None)
     env.pop("CLAUDE_CODE_ENTRYPOINT", None)
-    env.update(extra or {})
     return env
 
 
 def claude_result(stdout):
-    """The final result object of a Claude Code -p run, whatever the output format: one JSON
-    object (--output-format json) or a stream of events (stream-json, as a shell wrapper may
-    well ask for) whose last `type: result` line carries the same fields. None when there is
-    no such object. Scanning 40k lines of thinking_tokens events is a few milliseconds."""
+    """The final result object of a Claude Code -p run: one JSON object (--output-format json),
+    or, should the CLI print events around it, the last `type: result` line, which carries the
+    same fields. None when there is no such object."""
     s = (stdout or "").strip()
     if not s:
         return None
@@ -706,7 +688,7 @@ def run_harness(h, prompt, repo, artdir, log):
     prompt_path = os.path.join(artdir, "prompt.md")
     write_text(prompt_path, prompt)
     out_path, err_path = os.path.join(artdir, "harness.out"), os.path.join(artdir, "harness.err")
-    env = harness_env(os.environ, resolve_env(h["env"]))
+    env = harness_env(os.environ)
     result = {"type": h["type"], "model": h.get("model"), "session_id": None, "turns": None,
               "exit": None, "cost_usd": None}
     usage = {"input": None, "output": None, "cache_read": None, "cache_write": None}
@@ -733,6 +715,27 @@ def run_harness(h, prompt, repo, artdir, log):
                "-s", "workspace-write", "-C", repo, "--skip-git-repo-check"]
         if h.get("model"):
             cmd += ["-m", h["model"]]
+    elif h["type"] == "pi":
+        # The person's global skills, extensions and prompt templates stay out of the round:
+        # by default pi writes every installed skill into the system prompt (28 of them, 23k
+        # characters, on the machine this was verified on), which a round has no use for and
+        # which would change between rounds whenever the person installs one. AGENTS.md /
+        # CLAUDE.md in the repository are still read, as the claude harness reads CLAUDE.md.
+        cmd = ["pi", "--mode", "json", "--no-session", "--no-skills", "--no-extensions",
+               "--no-prompt-templates"]
+        if h.get("model"):
+            cmd += ["--model", h["model"]]
+        cmd += ["--", prompt]
+    elif h["type"] == "goose":
+        # --no-profile drops the person's default extensions (sub-agents, extension manager and
+        # the like); the developer builtin alone gives shell, edit, write and tree.
+        cmd = ["goose", "run", "--output-format", "json", "--no-session", "--no-profile",
+               "--with-builtin", "developer"]
+        if h.get("model"):
+            cmd += ["--model", h["model"]]
+        if h.get("max_turns"):
+            cmd += ["--max-turns", str(int(h["max_turns"]))]
+        cmd += ["-t", prompt]
     else:
         cmd = list(h["command"]) if isinstance(h["command"], list) else ["sh", "-c", h["command"]]
         cmd += list(h.get("args") or [])
@@ -748,9 +751,7 @@ def run_harness(h, prompt, repo, artdir, log):
     text = tail(stdout, 40, 4000) or tail(stderr, 40, 4000)
     failure = reason
 
-    if h["type"] in ("claude", "shell"):
-        # A shell harness is usually someone's own wrapper around `claude -p`; when its
-        # stdout is Claude Code's JSON, the round gets the same facts as the claude adapter.
+    if h["type"] == "claude":
         parsed = claude_result(stdout)
         if parsed:
             text = parsed.get("result") or text
@@ -773,13 +774,36 @@ def run_harness(h, prompt, repo, artdir, log):
                     log("harness stopped by {}; measuring what it left behind".format(subtype))
                 else:
                     failure = "harness_error:" + subtype
-        elif h["type"] == "claude" and code == 0 and not failure:
+        elif code == 0 and not failure:
             failure = "harness_output_not_json"
     elif h["type"] == "codex":
         text = read_text(last_msg, "") or text
         usage, result["turns"], result["session_id"] = codex_events(stdout)
         if code != 0 and not stdout.strip() and "trust" in (stderr or "").lower() and not failure:
             failure = "codex_untrusted_directory"
+    elif h["type"] == "pi":
+        parsed = pi_events(stdout)
+        if parsed["messages"]:
+            text = parsed["text"] or text
+            usage, result["cost_usd"] = parsed["usage"], parsed["cost_usd"]
+            result["turns"], result["session_id"] = parsed["messages"], parsed["session_id"]
+            result["model"] = result.get("model") or parsed["model"]
+            if parsed["error"] is not None and not failure:
+                failure = "harness_error:" + (parsed["error"] or "stopReason error")[:200]
+        elif code == 0 and not failure:
+            failure = "harness_output_not_json"
+    elif h["type"] == "goose":
+        parsed = goose_output(stdout)
+        if parsed:
+            text = parsed["text"] or text
+            usage, result["cost_usd"] = parsed["usage"], parsed["cost_usd"]
+            result["turns"], result["model"] = parsed["turns"], result.get("model") or parsed["model"]
+            if parsed["status"] == "error" and not failure:
+                failure = "harness_error:" + (first_error_line(stderr) or "status error")[:200]
+        elif code == 0 and not failure:
+            failure = "harness_output_not_json"
+        if code != 0 and not failure:
+            failure = "harness_error:" + (first_error_line(stderr) or "exit {}".format(code))[:200]
     if code != 0 and not failure and not result.get("cut_off"):
         # claude -p exits 1 when one of its own caps trips (observed on 2.1.294); the JSON on
         # stdout already said which, and that is not a failed round.
@@ -787,8 +811,7 @@ def run_harness(h, prompt, repo, artdir, log):
 
     result["failure"] = failure
     write_json(os.path.join(artdir, "harness.meta.json"),
-               {"cmd": cmd, "env_extra": sorted((h.get("env") or {}).keys()),
-                "harness": result, "usage": usage})
+               {"cmd": cmd, "harness": result, "usage": usage})
     return {"harness": result, "usage": usage, "text": text.strip(), "failure": failure}
 
 
@@ -845,6 +868,111 @@ def find_usage(node):
             if found:
                 return found
     return None
+
+
+def message_text(message):
+    """The text blocks of one assistant message, in order; thinking and tool calls left out."""
+    return "\n".join(c.get("text") or "" for c in (message.get("content") or [])
+                     if isinstance(c, dict) and c.get("type") == "text").strip()
+
+
+def pi_events(stdout):
+    """pi --mode json prints one event per line: a `session` header, then agent / turn /
+    message / tool events, ending with agent_end and agent_settled.
+
+    Verified against pi 1.3.0 (2026-10-19, glm-5.3 on the zai-coding-cn provider): usage sits
+    on each assistant message (`message_end.message.usage`: input / output / cacheRead /
+    cacheWrite / cost.total) and covers that message only, so a run is the sum over its
+    assistant messages. A failed model call does not change the exit code - pi exits 0 with a
+    last assistant message whose stopReason is "error" and whose errorMessage says why (a 401
+    looked like that), so `error` here is the only failure signal pi gives.
+    """
+    out = {"messages": 0, "text": "", "session_id": None, "model": None, "error": None,
+           "usage": {"input": None, "output": None, "cache_read": None, "cache_write": None},
+           "cost_usd": None}
+    sums = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0}
+    cost, seen_usage, last = 0.0, False, None
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        if ev.get("type") == "session" and not out["session_id"]:
+            out["session_id"] = ev.get("id")
+        msg = ev.get("message")
+        if ev.get("type") != "message_end" or not isinstance(msg, dict) or \
+                msg.get("role") != "assistant":
+            continue
+        out["messages"] += 1
+        last = msg
+        out["model"] = msg.get("model") or out["model"]
+        u = msg.get("usage") or {}
+        if u:
+            seen_usage = True
+            for key, src in (("input", "input"), ("output", "output"),
+                             ("cache_read", "cacheRead"), ("cache_write", "cacheWrite")):
+                sums[key] += u.get(src) or 0
+            cost += ((u.get("cost") or {}).get("total")) or 0
+    if last is not None:
+        out["text"] = message_text(last)
+        if last.get("stopReason") == "error":
+            out["error"] = str(last.get("errorMessage") or "")
+    if seen_usage:
+        out["usage"], out["cost_usd"] = sums, round(cost, 6)
+    return out
+
+
+def goose_output(stdout):
+    """goose run --output-format json prints a text banner (logo, provider and model, session
+    line), then one JSON object `{messages, metadata}` spread over many lines.
+
+    Verified against goose 1.55.0 (2026-10-19, glm-5.3 on the zhipu provider): metadata holds
+    the run's totals - input_tokens / output_tokens / cache_read_input_tokens /
+    cache_write_input_tokens / cost_usd - and `status`, "completed" or "error". A failed model
+    call exits 1 with status "error" and the reason on stderr. When --max-turns stops the agent
+    goose still exits 0 with status "completed"; the only trace is the last assistant message
+    ("I've reached the maximum number of actions..."), so that round is simply measured.
+    None when stdout holds no such object.
+    """
+    s = stdout or ""
+    if s.startswith("{"):
+        start = 0
+    else:
+        start = s.find("\n{") + 1
+        if not start:
+            return None
+    try:
+        obj = json.loads(s[start:])
+    except ValueError:
+        return None
+    if not isinstance(obj, dict) or not isinstance(obj.get("metadata"), dict):
+        return None
+    meta = obj["metadata"]
+    msgs = [m for m in (obj.get("messages") or [])
+            if isinstance(m, dict) and m.get("role") == "assistant"]
+    model = None
+    for m in msgs:
+        model = ((m.get("metadata") or {}).get("inference") or {}).get("requestedModel") or model
+    return {"status": meta.get("status"), "turns": len(msgs) or None, "model": model,
+            "text": message_text(msgs[-1]) if msgs else "",
+            "usage": {"input": meta.get("input_tokens"), "output": meta.get("output_tokens"),
+                      "cache_read": meta.get("cache_read_input_tokens"),
+                      "cache_write": meta.get("cache_write_input_tokens")},
+            "cost_usd": meta.get("cost_usd")}
+
+
+def first_error_line(stderr):
+    """The line of a CLI's stderr that names the failure, else its first non-empty line."""
+    lines = [l.strip() for l in (stderr or "").splitlines() if l.strip()]
+    for line in lines:
+        if "error" in line.lower():
+            return line
+    return lines[0] if lines else ""
 
 
 # -------------------------------------------------------------------- gate / score
@@ -1200,8 +1328,10 @@ def preflight(cfg, sub, repo, ledger, log):
                       "them away first; a round that cannot see every checkpoint might compare "
                       "against the wrong best.".format(len(bad), ", ".join(bad[:5])),
                       unreadable=bad)
-    resolve_env(sub["harness"]["env"])
-    if sub["harness"]["type"] in ("claude", "codex") and not which(sub["harness"]["type"]):
+    endpoint = endpoint_refusal(sub)
+    if endpoint:
+        raise Refusal(endpoint, env="ANTHROPIC_BASE_URL")
+    if sub["harness"]["type"] in HARNESS_CLIS and not which(sub["harness"]["type"]):
         raise Refusal("the {} harness needs the {} CLI on PATH; run doctor".format(
             sub["harness"]["type"], sub["harness"]["type"]))
     if head_sha(repo) is None:
@@ -1395,9 +1525,6 @@ def run_rounds(args, repo, cfg, sub, ledger, run_id, stale_lock):
     if serve_url(ledger):
         log("live report: {}".format(serve_url(ledger)))
     idx = preflight(cfg, sub, repo, ledger, log)
-    window = unknown_window_warning(sub)
-    if window:
-        log("warning: " + window)
     ledger.snapshot(cfg)
 
     if args.dry_prompt:
@@ -1632,6 +1759,8 @@ def cmd_doctor(args):
         "git": tool_version("git", ["--version"]),
         "claude": tool_version("claude", ["--version"]),
         "codex": tool_version("codex", ["--version"]),
+        "pi": tool_version("pi", ["--version"]),
+        "goose": tool_version("goose", ["--version"]),
     }
     problems, warnings = [], []
     if sys.version_info < (3, 9):
@@ -1639,8 +1768,9 @@ def cmd_doctor(args):
             tools["python3"]["version"]))
     if not tools["git"]["available"]:
         problems.append("git is not available")
-    if not tools["claude"]["available"] and not tools["codex"]["available"]:
-        warnings.append("neither claude nor codex is on PATH; only the shell harness can run")
+    if not any(tools[t]["available"] for t in HARNESS_CLIS):
+        warnings.append("none of {} is on PATH; only the shell harness can run".format(
+            ", ".join(HARNESS_CLIS)))
     if tools["codex"]["available"]:
         warnings.append("codex exits at startup in a directory it has not been trusted in; "
                         "run `codex` once in the target repository and accept the trust prompt")
@@ -1675,19 +1805,14 @@ def cmd_doctor(args):
                 missing = check_subject_files(repo, sub)
                 entry = {"name": sub["name"], "harness": sub["harness"]["type"],
                          "depends_on": sub["depends_on"], "missing": missing}
-                try:
-                    resolve_env(sub["harness"]["env"])
-                except Refusal as exc:
-                    entry["env"] = str(exc)
-                    problems.append("subject {}: {}".format(sub["name"], exc))
-                window = unknown_window_warning(sub)
-                if window:
-                    entry["warning"] = window
-                    warnings.append(window)
+                endpoint = endpoint_refusal(sub)
+                if endpoint:
+                    entry["endpoint"] = endpoint
+                    problems.append(endpoint)
                 if missing:
                     problems.append("subject {}: {}".format(sub["name"], "; ".join(
                         "{} {} is {}".format(m["what"], m["path"], m["why"]) for m in missing)))
-                if sub["harness"]["type"] in ("claude", "codex") and \
+                if sub["harness"]["type"] in HARNESS_CLIS and \
                         not tools[sub["harness"]["type"]]["available"]:
                     problems.append("subject {} wants the {} harness, which is not available".format(
                         sub["name"], sub["harness"]["type"]))
@@ -1778,29 +1903,29 @@ RESEARCH_TEMPLATE = {
     "harness": {
         "_doc": "Defaults for every subject; a subject can override any of these.",
         "type": "claude",
-        "_doc_type": "claude = claude -p, codex = codex exec, shell = any command with the prompt "
-                     "on stdin (used for self-tests and custom executors).",
+        "_doc_type": "claude = claude -p (Anthropic models only; refused while ANTHROPIC_BASE_URL "
+                     "is set), codex = codex exec, pi = pi --mode json, goose = goose run (pi and "
+                     "goose are the way to a third-party model such as GLM), shell = a command that "
+                     "gets the prompt on stdin and calls no model (self-tests, custom executors).",
         "model": None,
+        "_doc_model": "null = the tool's own default. claude: --model (opus, sonnet, ...); codex, "
+                      "pi and goose read their configured default model, set here only to override "
+                      "it (pi accepts provider/id). Models and keys are configured in each tool, "
+                      "never here: pi /login, goose configure.",
         "max_turns": 40,
-        "_doc_max_turns": "claude only: how many agentic turns (tool calls) one round may take. "
-                          "The CLI stops the agent with error_max_turns and the round is still "
-                          "measured. null = no cap.",
+        "_doc_max_turns": "How many agentic turns one round may take; the round is still measured "
+                          "when the cap stops the agent. claude and goose only (pi has no such "
+                          "cap: set null and rely on timeout_sec). null = no cap.",
         "timeout_sec": 1800,
         "_doc_timeout_sec": "A round that runs longer than this is killed, process group and all, "
                             "and recorded as an error.",
         "max_budget_usd": None,
         "_doc_max_budget_usd": "claude only: the CLI's own client-side cost estimate at Anthropic "
-                               "prices (not a bill, and not what a third-party endpoint charges). "
-                               "The agent is stopped with error_max_budget_usd and the round is "
-                               "still measured.",
+                               "prices (not a bill). The agent is stopped with "
+                               "error_max_budget_usd and the round is still measured.",
         "command": None,
-        "_doc_command": "shell harness only: the command to run, prompt arrives on stdin.",
-        "env": {},
-        "_doc_env": "Passed to the harness process. \"$NAME\" is read from your environment at "
-                    "launch, so API keys never land in this file. Third-party Anthropic-compatible "
-                    "endpoint: ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN (\"$KEY\"), ANTHROPIC_MODEL "
-                    "(not harness.model), and CLAUDE_CODE_MAX_CONTEXT_TOKENS set to the model's "
-                    "real context window - Claude Code assumes 200000 for a name it does not know.",
+        "_doc_command": "shell harness only: the command to run (a string for sh -c, or an argv "
+                        "array); the prompt arrives on stdin and the tail of stdout is the note.",
     },
     "subjects": [],
 }
@@ -1854,6 +1979,8 @@ def cmd_init(args):
         cfg["name"] = args.name or (os.path.basename(repo) + "-autoresearch")
         cfg["description"] = args.describe or ""
         cfg["harness"]["type"] = args.harness
+        if args.harness not in ("claude", "goose"):
+            cfg["harness"]["max_turns"] = None
         if args.harness == "shell":
             cfg["harness"]["command"] = "echo 'replace harness.command with your executor'"
         for name in subjects:
