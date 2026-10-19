@@ -939,18 +939,19 @@ def goose_output(stdout):
     ("I've reached the maximum number of actions..."), so that round is simply measured.
     None when stdout holds no such object.
     """
-    s = stdout or ""
-    if s.startswith("{"):
-        start = 0
-    else:
-        start = s.find("\n{") + 1
-        if not start:
-            return None
-    try:
-        obj = json.loads(s[start:])
-    except ValueError:
-        return None
-    if not isinstance(obj, dict) or not isinstance(obj.get("metadata"), dict):
+    obj = None
+    # Try every line that opens an object, so that a stray "{" in the banner or text printed
+    # after the object does not hide it.
+    decoder = json.JSONDecoder()
+    for m in re.finditer(r"(?m)^[ \t]*\{", stdout or ""):
+        try:
+            cand, _end = decoder.raw_decode(stdout, m.end() - 1)
+        except ValueError:
+            continue
+        if isinstance(cand, dict) and isinstance(cand.get("metadata"), dict):
+            obj = cand
+            break
+    if obj is None:
         return None
     meta = obj["metadata"]
     msgs = [m for m in (obj.get("messages") or [])
@@ -1980,7 +1981,9 @@ def cmd_init(args):
         cfg["description"] = args.describe or ""
         cfg["harness"]["type"] = args.harness
         if args.harness not in ("claude", "goose"):
-            cfg["harness"]["max_turns"] = None
+            # Left out rather than null: a null here would be inherited by a subject that
+            # switches to claude or goose and silently leave it uncapped instead of at 40.
+            del cfg["harness"]["max_turns"]
         if args.harness == "shell":
             cfg["harness"]["command"] = "echo 'replace harness.command with your executor'"
         for name in subjects:
