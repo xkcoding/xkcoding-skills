@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Reject what is not worth measuring: banned modules, side files, a broken or slow round trip.
+
+Exit 0 = pass. Anything else crashes the round before it is scored. Runs from the repository
+root; the agent may run it as often as it likes.
+"""
+
+import ast
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import measure  # noqa: E402
+
+BANNED_MODULES = {"zlib", "bz2", "lzma", "gzip", "zipfile", "tarfile", "zipimport", "ctypes",
+                  "subprocess", "multiprocessing", "socket", "urllib", "http", "ftplib",
+                  "importlib", "os", "sys", "pathlib", "shutil", "glob", "pickle", "marshal",
+                  "shelve", "codecs"}
+BANNED_CALLS = {"open", "__import__", "exec", "eval", "compile"}
+CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "corpus")
+
+
+def fail(msg):
+    sys.stderr.write("gate: " + msg + "\n")
+    sys.exit(1)
+
+
+def check_source():
+    if not os.path.isfile("codec.py"):
+        fail("codec.py is missing")
+    src = open("codec.py", encoding="utf-8").read()
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as exc:
+        fail("codec.py does not parse: {}".format(exc))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in BANNED_MODULES:
+                    fail("codec.py imports {}, which is banned".format(alias.name))
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or "").split(".")[0] in BANNED_MODULES:
+                fail("codec.py imports from {}, which is banned".format(node.module))
+        elif isinstance(node, ast.Call):
+            # Bare names only: re.compile() is fine, compile() is not. The one attribute that
+            # still matters is .open(), which io.open and codecs.open would otherwise offer.
+            if isinstance(node.func, ast.Name) and node.func.id in BANNED_CALLS:
+                fail("codec.py calls {}(), which is banned".format(node.func.id))
+            if isinstance(node.func, ast.Attribute) and node.func.attr == "open":
+                fail("codec.py calls .open(), which is banned")
+
+
+def check_tree():
+    p = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"],
+                       capture_output=True, text=True)
+    changed = sorted(line[3:] for line in p.stdout.splitlines() if line.strip())
+    extra = [c for c in changed if c != "codec.py"]
+    if extra:
+        fail("only codec.py may change; the tree also changed: {}".format(", ".join(extra[:8])))
+
+
+def check_round_trips():
+    for directory in ("sample", CORPUS):
+        for path in measure.files_in(directory):
+            r = measure.run_codec(path)
+            if not r["ok"]:
+                fail("{}: {}".format(os.path.relpath(path), r.get("error") or "round trip failed"))
+
+
+check_source()
+check_tree()
+check_round_trips()
+print("gate: ok")

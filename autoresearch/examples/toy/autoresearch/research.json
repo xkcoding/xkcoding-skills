@@ -1,0 +1,15 @@
+{
+  "_doc": "A research you can run without a model: the harness is a script that nudges one number, the scorer measures the distance to a target it hides from the agent.",
+  "name": "toy-autoresearch",
+  "description": "Move six numbers towards a target only the scorer knows.",
+  "direction": "max",
+  "harness": {
+    "type": "shell",
+    "timeout_sec": 60,
+    "command": ["python3", "autoresearch/harness.py"]
+  },
+  "subjects": [
+    {"name": "vec", "editable": ["vec.json"], "max_rounds": 60, "max_consecutive_discards": 30},
+    {"name": "polish", "editable": ["vec.json"], "depends_on": ["vec"], "max_rounds": 20, "max_consecutive_discards": 10}
+  ]
+}

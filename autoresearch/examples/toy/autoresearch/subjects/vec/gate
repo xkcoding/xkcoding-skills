@@ -1,0 +1,8 @@
+#!/bin/sh
+# vec.json must stay a JSON object with six numbers in v. Anything else is not worth measuring.
+python3 - <<'PY' || exit 1
+import json, sys
+v = json.load(open("vec.json"))["v"]
+assert isinstance(v, list) and len(v) == 6, "v must hold six numbers"
+assert all(isinstance(x, (int, float)) for x in v), "v must hold numbers"
+PY

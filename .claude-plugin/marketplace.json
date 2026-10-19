@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Developer productivity skills for Claude Code",
-    "version": "0.6.0"
+    "version": "0.7.0"
   },
   "plugins": [
     {
@@ -46,6 +46,15 @@
       "strict": false,
       "skills": [
         "./dispatch/codex"
+      ]
+    },
+    {
+      "name": "autoresearch",
+      "description": "Run a long-horizon improvement loop outside the session — a scorer the person owns decides what each unattended round keeps, git is the experiment log, one report shows every round",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./autoresearch"
       ]
     }
   ]

@@ -1,0 +1,75 @@
+{
+  "_doc": "The behaviour a query-string parser is expected to have in this kata. The `cases` subject is scored on how much of this list its test cases cover, with at most four features counted per case; the `impl` subject is scored on how many of those cases its parser gets right. Both read this file.",
+  "parse_rules": [
+    "A leading '?' is dropped.",
+    "The query is split on '&'; empty segments are skipped.",
+    "Each segment is split on its FIRST '=' into key and value; a segment without '=' has an empty value.",
+    "Key and value are both percent-decoded, and '+' becomes a space.",
+    "A key ending in '[]' always produces a list, in the order the values appear.",
+    "A key of the form 'name[inner]' produces a dict under 'name'.",
+    "A plain key seen twice produces a list of its values, in order.",
+    "When the same name is used with conflicting shapes, the last form wins."
+  ],
+  "features": [
+    {
+      "name": "pair",
+      "means": "a plain key=value pair with a non-empty value",
+      "example": "a=1"
+    },
+    {
+      "name": "multi_pair",
+      "means": "two or more pairs in one query",
+      "example": "a=1&b=2"
+    },
+    {
+      "name": "repeat_key",
+      "means": "the same key more than once, which makes a list",
+      "example": "a=1&a=2"
+    },
+    {
+      "name": "empty_value",
+      "means": "a key with '=' and nothing after it",
+      "example": "a="
+    },
+    {
+      "name": "bare_key",
+      "means": "a segment with no '=' at all",
+      "example": "flag"
+    },
+    {
+      "name": "percent_encoded",
+      "means": "a %XX escape in the key or the value",
+      "example": "a=%E4%B8%AD"
+    },
+    {
+      "name": "plus_as_space",
+      "means": "a '+' that decodes to a space",
+      "example": "a=hello+world"
+    },
+    {
+      "name": "leading_question_mark",
+      "means": "the query starts with '?'",
+      "example": "?a=1"
+    },
+    {
+      "name": "array_suffix",
+      "means": "a key ending in '[]'",
+      "example": "a[]=1&a[]=2"
+    },
+    {
+      "name": "nested_key",
+      "means": "a key of the form name[inner]",
+      "example": "a[b]=1"
+    },
+    {
+      "name": "blank_segment",
+      "means": "an empty segment from '&&' or a leading/trailing '&'",
+      "example": "a=1&&b=2"
+    },
+    {
+      "name": "equals_in_value",
+      "means": "a '=' inside the value, which does not split again",
+      "example": "a=b=c"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Total bytes: the encoded corpus plus codec.py itself. Lower is better (direction: min).
+
+Prints one JSON object. Runs from the repository root, after the gate. A file that fails its
+round trip here (the gate should have caught it) makes this an error exit: a number that
+hides a broken codec would be worse than no number.
+"""
+
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import measure  # noqa: E402
+
+VERSION = "1.0.0"
+CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "corpus")
+
+per_file = {}
+failed = []
+for path in measure.files_in(CORPUS):
+    r = measure.run_codec(path)
+    name = os.path.basename(path)
+    if not r["ok"]:
+        failed.append("{}: {}".format(name, r.get("error")))
+        continue
+    per_file[name] = {"raw": r["raw"], "enc": r["enc"], "ms": r["ms"],
+                      "ratio": round(r["raw"] / r["enc"], 3) if r["enc"] else None}
+if failed:
+    sys.stderr.write("score: round trip failed: " + "; ".join(failed) + "\n")
+    sys.exit(2)
+
+codec_bytes = os.path.getsize("codec.py")
+corpus_raw = sum(v["raw"] for v in per_file.values())
+corpus_enc = sum(v["enc"] for v in per_file.values())
+total = corpus_enc + codec_bytes
+
+remaining = ["{}: {}x (raw {} -> {} bytes)".format(n, v["ratio"], v["raw"], v["enc"])
+             for n, v in sorted(per_file.items(), key=lambda kv: -kv[1]["enc"])]
+remaining.append("codec.py: {} bytes, counted in the score".format(codec_bytes))
+
+print(json.dumps({
+    "score": total,
+    "version": VERSION,
+    "details": {
+        "total": total,
+        "corpus_raw": corpus_raw,
+        "corpus_encoded": corpus_enc,
+        "codec_bytes": codec_bytes,
+        "ratio": round(corpus_raw / corpus_enc, 3) if corpus_enc else None,
+        "slowest_ms": max(v["ms"] for v in per_file.values()) if per_file else 0,
+        "files": per_file,
+    },
+    "remaining": remaining,
+}, ensure_ascii=False))

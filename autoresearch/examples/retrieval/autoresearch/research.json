@@ -1,0 +1,32 @@
+{
+  "_doc": "Two subjects in a pipeline: recall produces candidates, select picks one of them. select depends on recall and each is locked out of the other's file.",
+  "name": "retrieval",
+  "description": "A two-stage asset retrieval pipeline scored on a held-out split: recall.py turns a query into up to 20 candidate ids (scored on recall and precision), select.py picks the one asset the query means out of recall's candidates (scored on hit rate). Queries are English, Chinese or mixed, with synonyms, hex colours, size words, typos and optional preferences. Higher is better.",
+  "direction": "max",
+  "harness": {
+    "type": "claude",
+    "timeout_sec": 1200,
+    "max_turns": 60
+  },
+  "subjects": [
+    {
+      "name": "recall",
+      "editable": ["recall.py"],
+      "locked": ["select.py", "spec/**", "data/**", "README.md", ".gitignore"],
+      "agent_may_score": true,
+      "max_rounds": 30,
+      "max_consecutive_discards": 8,
+      "max_consecutive_errors": 3
+    },
+    {
+      "name": "select",
+      "editable": ["select.py"],
+      "locked": ["recall.py", "spec/**", "data/**", "README.md", ".gitignore"],
+      "depends_on": ["recall"],
+      "agent_may_score": true,
+      "max_rounds": 30,
+      "max_consecutive_discards": 8,
+      "max_consecutive_errors": 3
+    }
+  ]
+}

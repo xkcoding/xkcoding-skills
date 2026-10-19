@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""100 × (0.7 × recall@20 + 0.3 × mean precision) on the held-out split; the public split is
+measured alongside so that fitting shows as a gap. Prints one JSON object. Runs from the
+repository root, after the gate."""
+
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "lib"))
+import evalkit  # noqa: E402
+from gen import read_jsonl  # noqa: E402
+
+VERSION = "1.0.0"
+
+
+def measure(split_path):
+    results, err = evalkit.run_stage("recall", split_path)
+    if err:
+        sys.stderr.write("score: " + err + "\n")
+        sys.exit(2)
+    return evalkit.recall_metrics(results, read_jsonl(split_path))
+
+
+hidden = measure(evalkit.HELDOUT)
+public = measure(evalkit.PUBLIC)
+score = lambda m: round(100 * (0.7 * m["recall"] + 0.3 * m["precision"]), 2)  # noqa: E731
+assets = evalkit.asset_index()
+
+remaining = ["missed: {!r} -> {}".format(q["query"], evalkit.describe(assets, q["gt"]))
+             for q in public["missed"][:50]]
+if len(public["missed"]) > 50:
+    remaining.append("missed: ... {} more public queries".format(len(public["missed"]) - 50))
+remaining += ["low precision: {!r} -> {}/{} candidates share the subject".format(
+    q["query"], k, n) for q, k, n in public["low_precision"][:10]]
+
+print(json.dumps({
+    "score": score(hidden),
+    "version": VERSION,
+    "details": {
+        "heldout": {"score": score(hidden), "recall": hidden["recall"],
+                    "precision": hidden["precision"], "queries": hidden["n"]},
+        "public": {"score": score(public), "recall": public["recall"],
+                   "precision": public["precision"], "queries": public["n"]},
+        "gap_public_minus_heldout": round(score(public) - score(hidden), 2),
+    },
+    "remaining": remaining,
+}, ensure_ascii=False))

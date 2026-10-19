@@ -1,0 +1,25 @@
+#!/bin/sh
+# Every case must be a JSON object with an "input" string and an "expected" value, and nothing
+# but .json files may live in cases/. This is the cheap check; the scorer does the real one.
+python3 - <<'PY' || exit 1
+import json, os, sys
+bad = []
+if os.path.isdir("cases"):
+    for name in sorted(os.listdir("cases")):
+        path = os.path.join("cases", name)
+        if name in (".gitkeep",) or os.path.isdir(path):
+            continue
+        if not name.endswith(".json"):
+            bad.append("{}: only .json files belong in cases/".format(path))
+            continue
+        try:
+            data = json.load(open(path, encoding="utf-8"))
+        except Exception as exc:
+            bad.append("{}: not valid JSON ({})".format(path, exc))
+            continue
+        if not isinstance(data, dict) or not isinstance(data.get("input"), str) or "expected" not in data:
+            bad.append('{}: needs an "input" string and an "expected" value'.format(path))
+for line in bad:
+    print(line, file=sys.stderr)
+sys.exit(1 if bad else 0)
+PY
