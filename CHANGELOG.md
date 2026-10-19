@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2026-10-08
+## [0.7.0] - 2026-10-19
 
 ### Added
 
@@ -14,11 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 四种结局：keep / discard / crash（改了锁定路径或 gate 失败，不打分）/ error（harness 或打分器坏了，不占 discard 配额）
   - git 当实验日志：每轮一个 commit（`--allow-empty`），失败的轮次 revert 而不是 reset，历史里留得住；空轮次不 revert
   - 打分器契约 `{score, version, details, remaining}`：自报版本，只在同版本内比较，换版本自动重测基线并在报告里换色带；`remaining` 是无状态 harness 的状态载体
-  - 三种 harness：`claude`（`claude -p`，`--max-turns` / `--max-budget-usd` 截断的轮次照常打分）、`codex`（`codex exec --json`）、`shell`（任意命令，自测与自定义用）；超时杀整个进程组，`harness.env` 的 `$VAR` 透传第三方端点凭据；`doctor` 对端点上 Claude Code 不认识的模型名没声明 `CLAUDE_CODE_MAX_CONTEXT_TOKENS` 给 warning（否则按 200k 窗口在轮内压缩）
+  - 五种 harness：`claude`（`claude -p`，只接 Anthropic 模型，环境里有 `ANTHROPIC_BASE_URL` 时拒绝启动；`--max-turns` / `--max-budget-usd` 截断的轮次照常打分）、`codex`（`codex exec --json`）、`pi`（`pi --mode json`）与 `goose`（`goose run --output-format json`）——GLM 等第三方模型只走这两个，不加载使用者的全局 skill 和扩展，模型与凭据用工具自己的配置，runner 不传任何端点或 key——以及 `shell`（不调模型的命令，自测与自定义用）；工具做不到的上限（pi 的轮数与费用、goose 的费用）在启动前拒绝；超时杀整个进程组
   - 运行锁（同一研究同时只能有一个 run）、`research.json` 拼错的键拒绝而不是静默忽略、解析不了的 checkpoint 拒绝 run 而不是悄悄跳过
   - 账本在仓库旁的 `<research>.ar/`，`index.json` 可从 checkpoint 文件完全重建；报告是单文件 HTML（内嵌 JSON 与 Apache ECharts，离线可用），每轮开始和结束各生成一次；`serve` 子命令在固定的本地 URL 上提供同一页面，页面轮询 `/data.json` 原地刷新，`status` / `run` / `report` 的输出带 `url`；每轮的 diff 存为 `artifacts/<subject>/<checkpoint>/changes.patch`，报告里展开一轮就能看到改动和分数构成相对上一个最佳的变化
   - 四个示例研究：`example toy`（不需要模型，验证机制）、`example kata`（两 subject，先写用例再写实现）、`example compress`（有梯度：单文件纯 Python 编解码器压固定语料，分数 = 压缩字节 + 编解码器自身字节）、`example retrieval`（两级管线：召回率 / 召准率 → 选用率，held-out 打分，公开 / 隐藏差距即过拟合）；模板可带 `setup.py` 在生成时产数据
-  - 需要 python3 ≥ 3.9、git ≥ 2.23，以及 `claude` 或 `codex` CLI 之一；目标仓库只多出一个 `autoresearch/` 定义目录和一条 `research/<name>` 分支
+  - 需要 python3 ≥ 3.9、git ≥ 2.23，以及 `claude` / `codex` / `pi` / `goose` CLI 之一；目标仓库只多出一个 `autoresearch/` 定义目录和一条 `research/<name>` 分支
 
 ## [0.6.0] - 2026-09-19
 
