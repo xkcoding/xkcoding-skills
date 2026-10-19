@@ -44,20 +44,24 @@ During `init` the skill SHALL walk the person through the questions that determi
 - **WHEN** the person asks to run 20 rounds in the background
 - **THEN** the runner and `serve` are started detached, the report URL and the log path under `<research>.ar/runs/` are shown, and the session returns immediately
 
-### Requirement: Doctor checks by executing
-`doctor` SHALL determine the availability of `python3`, `git`, `claude` and `codex` by executing their version commands, SHALL report the repository state (clean tree, branch, presence of a research definition), SHALL warn when a subject's `claude` harness sets `ANTHROPIC_BASE_URL` and an `ANTHROPIC_MODEL` Claude Code does not recognise without `CLAUDE_CODE_MAX_CONTEXT_TOKENS` (Claude Code then assumes a 200K window and compacts the round at that size), and SHALL only report; it SHALL NOT install, log in or create anything.
-
-#### Scenario: Codex not installed
-- **WHEN** `codex` is absent
-- **THEN** doctor reports it as unavailable and still reports `claude` as available if it runs
-
-#### Scenario: Endpoint model without a declared window
-- **WHEN** `harness.env` sets `ANTHROPIC_BASE_URL` and `ANTHROPIC_MODEL=glm-5.3` and neither `CLAUDE_CODE_MAX_CONTEXT_TOKENS` nor a `[1m]` suffix is given
-- **THEN** doctor lists a warning naming the subject and the variable to set, and `ok` stays true
-
 ### Requirement: Human intervention is through files, not the session
 To change the research direction the skill SHALL direct the person to edit `program.md`, and to change what is measured to edit `score` and bump its reported version; it SHALL explain that the runner picks up both at the next round and that a version bump starts a new comparison baseline.
 
 #### Scenario: Person wants to penalise redundancy
 - **WHEN** the person says redundant cases should cost points
 - **THEN** the skill proposes the change to `score`, reminds them to bump `version`, and does not touch the running loop
+
+### Requirement: Doctor checks every harness by executing
+`doctor` SHALL determine the availability of `python3`, `git`, `claude`, `codex`, `pi` and `goose` by executing their version commands, SHALL report the repository state (clean tree, branch, presence of a research definition), SHALL report as a problem a subject whose harness CLI is not available, SHALL report as a problem a `claude` subject while `ANTHROPIC_BASE_URL` is set, and SHALL only report; it SHALL NOT install, log in, configure a model or create anything.
+
+#### Scenario: Codex not installed
+- **WHEN** `codex` is absent
+- **THEN** doctor reports it as unavailable and still reports `claude` as available if it runs
+
+#### Scenario: Subject wants an absent harness
+- **WHEN** subject `cases` uses the `goose` harness and `goose --version` cannot be executed
+- **THEN** doctor lists a problem naming `cases` and `goose`, and `ok` is false
+
+#### Scenario: Claude subject with a third-party endpoint set
+- **WHEN** `ANTHROPIC_BASE_URL` is set and a subject uses the `claude` harness
+- **THEN** doctor lists a problem naming the subject and `ANTHROPIC_BASE_URL`, and suggests `pi` or `goose`
