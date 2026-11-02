@@ -535,13 +535,16 @@ def omp_input_box(text):
 
 def omp_pane_state(text):
     """working: the status line starts with a spinner; ready: an empty prompt; typed: text waiting in it;
-    dialog: a selector is open. Anything else is unknown and gets no input."""
-    selector = re.compile(r"enter (select|confirm)|↑↓|\(y/n\)", re.I)
+    dialog: a selector is open; exited: omp left its last frame on screen and printed how to resume.
+    Anything else is unknown and gets no input."""
+    selector = re.compile(r"enter (select|confirm)|↑/?↓|\(y/n\)", re.I)
     lay = omp_layout(text)
     if lay is None:
         lines = [ln for ln in text.splitlines() if ln.strip()]
         return "dialog" if any(selector.search(ln) for ln in lines[-12:]) else "unknown"
     top, bottom, stats, lines = lay
+    if any("Resume this session with" in ln or "omp --resume" in ln for ln in lines[stats + 1:]):
+        return "exited"
     if any(selector.search(ln) for ln in lines[top:]):
         return "dialog"
     if OMP_SPINNER.match(lines[stats]):

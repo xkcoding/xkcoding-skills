@@ -30,7 +30,7 @@
 
 - [x] 4.1 omp 端到端：一个 2 task 的 change 按 `/dispatch:omp` 的流程走 `plan → create → launch（即下达 goal）→ list`，直到 `claims_done`，再 `record-verify` 与 `publish` 到本地 bare origin；验证：每 task 一个 commit，`list` 显示执行者 `omp`、goal `complete`，`verify.md` 写 omp 版本与模型；`~/.omp/agent` 下的 config 与 `omp plugin list` 前后一致
 - [x] 4.2 边界探针（经 omp 的工具调用，以 JSON 事件流与文件系统为准）：worktree 内 commit、bash 写主 checkout、`write` / `edit` 越界、改写 `.git` 指针、`read` 读 `https://example.com` 与 `ssh://` / `proc://` 地址、`read` 读诱饵禁读目录、`npm install`；再在一个声明了 MCP server 的临时 omp 配置下启动，确认模型可用工具仍只有白名单那几个；验证：commit 与 `npm install` 成功，其余全部被拒且无文件变化、无网页内容进入事件流，MCP 工具不出现
-- [ ] 4.3 界面与 `--strict`：抓下 omp 退出后、选择框（`--strict` 下越界写触发 lane-guard 询问）两种 pane 原文补进 `pane_state` 样例与 known-behaviors；验证：`list` 对等待询问的 lane 给出 `blocked`，多余回车只会拒绝，退出后的 lane 被识别为 `exited` / `no_agent`
+- [x] 4.3 界面与 `--strict`：抓下 omp 退出后、选择框（`--strict` 下越界写触发 lane-guard 询问）两种 pane 原文补进 `pane_state` 样例与 known-behaviors；验证：`list` 对等待询问的 lane 给出 `blocked`，多余回车只会拒绝，退出后的 lane 被识别为 `exited` / `no_agent`
 - [ ] 4.4 混跑与 pi 退役：同一临时仓库一条 codex lane、一条 omp lane 跑完，再造一条记录为 `executor: pi` 的 lane；验证：两份引擎的 `list` 输出逐字相同，codex lane 走到 `claims_done`，pi lane 显示 `unknown_executor` 且巡检不向它发送任何输入
 - [ ] 4.5 清理：先 `herdr worktree remove --force` 再删临时目录，删对应的 omp session 与本机记录，codex 配置若被写入信任条目则按备份删除；验证：`herdr workspace list` 无实验 workspace，`/tmp` 无实验目录，`~/.codex/config.toml` 与开始前一致
 

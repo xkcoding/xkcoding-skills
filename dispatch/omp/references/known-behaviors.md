@@ -27,6 +27,8 @@
 - (2026-11-02, herdr 0.9.0 + omp 18.15.0) 刚建好的 pane 里立即启动一千多字符的 omp 命令，出现过一次命令结尾丢字（`…git status is clea`）、引号未闭合、omp 没起来；当时 pane 前台有提示符钩子调用的 `gh`。偶发。`launch` 因此先等前台只剩 shell，启动后发现没有 agent 且前台是 shell 就 ctrl+c 清掉输入再启动一次（`start_retried: "start_not_delivered"`）；用"先留一个未闭合的引号"人为制造这种失败，重试实测有效。
 - (2026-11-02, herdr 0.9.0 + omp 18.15.0) `herdr agent start` 要等 agent 就绪才返回；omp 带 `--goal` 一启动就工作，herdr 有时 4 秒返回，有时等到 goal 那一轮结束（一条 2 task lane 在 launch 返回时已经 `claims_done`），上限是 `--timeout`。所以 launch 返回时 lane 处于 `working` 也算启动成功。
 - (2026-11-02, omp 18.15.0) 工作中与空闲的界面识别对着实时 pane 复核过：herdr 报 `working` 的 7 次读取都判为 `working`，空闲判为 `ready`。
+- (2026-11-02, herdr 0.9.0 + omp 18.15.0) omp 退出（`/exit`）后 herdr 不再列出这个 agent（`list` 判 `no_agent`），但 pane 上留着 omp 最后一帧：输入框、底栏照旧在，下面接 `Resume this session with` / `omp --resume <id>` 和 shell 提示符。只看输入框会误判成空闲，所以状态栏之下出现这两行即判 `exited`。
+- (2026-11-02, herdr 0.9.0 + omp 18.15.0) `--strict` 下越界写弹出的 lane-guard 询问框替代了输入框：`╭─ lane-guard: allow write outside the lane? ─╮`，选项 `Deny`（默认，带光标）/ `Allow`，底部 `↑/↓ navigate  󰌑 select  󱊷 cancel`；底栏转圈符照转，herdr 报 `working`。所以 omp 的 `working` 要再读一次 pane，看到 `↑/↓` 这类选择提示即判 `blocked`。实测框开着时按一次回车 = Deny，文件没有写出，模型收到"被人拒绝"。
 
 ## lane-guard（sandbox-runtime 0.0.26）
 
