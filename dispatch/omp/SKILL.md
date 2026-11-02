@@ -58,9 +58,9 @@ bash "${CLAUDE_SKILL_DIR}/scripts/doctor.sh" --executor omp
 **边界靠机制，不靠模型自觉。** omp 自身没有 OS 沙箱。lane 的边界由三样东西给出：
 - **OS 沙箱**（随 skill 发布的 lane-guard 扩展）：shell 命令里可写的只有 lane worktree、主仓库 `.git`（`hooks` 与 `config` 除外）、各包管理器的缓存和 lane 自己的临时目录；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源；lane 改不了 worktree 的 `.git` 指针；沙箱起不来时 shell 一律拒绝，不会裸跑。
 - **守卫**：`write` / `edit` 越界即被拦并把原因交给模型；`read` 读不到 `~/.ssh`、`~/.aws`、`~/.gnupg`，也读不了任何网址或 omp 的内部 URI（只放行 `skill://`）——omp 的 `read` 本来能在沙箱外联网。
-- **工具白名单**：lane 里只有 read、bash、edit、write、goal。omp 其余的工具（eval、glob、task 子代理、web_search、`xd://` 设备、MCP、交互式 PTY、LSP）都会绕过沙箱或守卫，所以不开。
+- **工具白名单**：lane 里只有 read、bash、edit、write、goal。omp 其余的工具（eval、glob、task 子代理、web_search、交互式 PTY、LSP）都会绕过沙箱或守卫，所以不开。`xd://` 设备（含 MCP 工具）要经 `write` 调用，守卫拒绝任何 `协议://` 写入，所以也调用不到。
 
-启动参数里的 `--approval-mode yolo` 只是关掉 omp 自己"调用工具前问人"的环节——否则用户若把 omp 的默认审批改成会问，无人值守的 lane 会卡在每条 bash 上。它不放开上面任何一样；`--strict` 的问人由守卫发起。omp 进程本身在沙箱之外，确认页如实这么说。lane 能写共享的包缓存，这意味着它能在缓存里放进你之后在沙箱外构建时会执行的代码——派发的是你愿意让它碰你依赖缓存的 change。"lane 不 push"仍然靠 goal 里写明，加上发布前检查 origin 上是不是已经有了这条分支。
+启动参数里的 `--approval-mode yolo` 只是关掉 omp 自己"调用工具前问人"的环节——否则用户若把 omp 的默认审批改成会问，无人值守的 lane 会卡在每条 bash 上。它不放开上面任何一样；`--strict` 的问人由守卫发起。omp 进程本身在沙箱之外，它在启动时拉起的 MCP server 也是——包括被派发仓库自带的 `.omp/mcp.json` 里写的命令；确认页如实这么说。lane 能写共享的包缓存，这意味着它能在缓存里放进你之后在沙箱外构建时会执行的代码——派发的是你愿意让它碰你依赖缓存的 change。"lane 不 push"仍然靠 goal 里写明，加上发布前检查 origin 上是不是已经有了这条分支。
 
 **拿不准就交给人。** lane 在提问、有弹层在等人、goal 被人暂停或放弃、同一个 worktree 里有两个 agent——把原话报给用户，不要替他回答。
 

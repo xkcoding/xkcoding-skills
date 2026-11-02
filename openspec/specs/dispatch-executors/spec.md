@@ -1,7 +1,7 @@
 # dispatch-executors Specification
 
 ## Purpose
-Lets the same dispatch workflow hand OpenSpec changes to more than one coding agent — codex or pi — while every lane stays supervised by the rules of the agent actually running in it, and defines the boundaries a pi lane runs under.
+Lets the same dispatch workflow hand OpenSpec changes to more than one coding agent — codex or omp — while every lane stays supervised by the rules of the agent actually running in it, and defines the boundaries an omp lane runs under.
 
 ## Requirements
 

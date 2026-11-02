@@ -36,4 +36,4 @@
 
 ## 5. 注册与文档
 
-- [ ] 5.1 `.claude-plugin/marketplace.json` 的 `dispatch` 插件 `./dispatch/pi` 换成 `./dispatch/omp` 并更新描述；`dispatch/README.md`、仓库 `README.md`、`CLAUDE.md` 把 pi 换成 omp（含依赖、姿态、工具白名单、`--approval-mode yolo` 的含义、pi 已退役）；`CHANGELOG.md` 记 **BREAKING**；`dispatch-executors` 主 spec 的 Purpose 改为 codex 或 omp；验证：`jq . .claude-plugin/marketplace.json` 通过，`grep -rn "dispatch:pi\|dispatch/pi" --include=*.md --include=*.json .` 只剩 CHANGELOG 与 openspec 归档，`openspec validate --all --strict` 通过
+- [x] 5.1 `.claude-plugin/marketplace.json` 的 `dispatch` 插件 `./dispatch/pi` 换成 `./dispatch/omp` 并更新描述；`dispatch/README.md`、仓库 `README.md`、`CLAUDE.md` 把 pi 换成 omp（含依赖、姿态、工具白名单、`--approval-mode yolo` 的含义、pi 已退役）；`CHANGELOG.md` 记 **BREAKING**；`dispatch-executors` 主 spec 的 Purpose 改为 codex 或 omp；验证：`jq . .claude-plugin/marketplace.json` 通过，`grep -rn "dispatch:pi\|dispatch/pi" --include=*.md --include=*.json .` 只剩 CHANGELOG 与 openspec 归档，`openspec validate --all --strict` 通过
