@@ -11,6 +11,8 @@
 - (2026-11-02, omp 18.15.0) 不传 `--tools` 时模型可用 `read, bash, edit, eval, glob, grep, task, wait, todo, web_search, write` 及 `xd://ast_edit`、`xd://debug`。其中 `web_search` 在 omp 进程里联网；`glob` 不在守卫名单；`xd://ast_edit` 绕过 write / edit 守卫；`task` 子代理加载了 lane-guard 却没有 `--lane-policy`，靠"无策略即拒绝"才没漏。传 `--tools read,bash,edit,write`（加 `goal`）后只剩这几个。
 - (2026-11-02, omp 18.15.0) `read` 支持 `http(s)://`、`www.` 与内部 URI（`agent artifact attachment cfg conflict history issue local mcp memory mr omp out pr proc rule security skill ssh vault xd`），都在 omp 进程里执行。实测 `read https://example.com` 取回网页，同一 lane 里 bash 的 `curl` 被沙箱拒（403）。所以守卫对读取只放行普通路径与 `skill://`。
 - (2026-11-02, omp 18.15.0) `tools.approvalMode` 的默认值是 `yolo`（源码 `tools/settings.ts`）；用户可改成 `always-ask` / `always-ask-cached` / `write`，后三者在 bash 前会弹确认。lane 启动时显式传 `--approval-mode yolo`。
+- (2026-11-02, omp 18.15.0) 带 `--tools` 白名单时 omp 仍在启动时于**沙箱外**拉起配置里的 MCP server：实测 worktree 里的 `.omp/mcp.json`（项目级，`mcp.enableProjectConfig` 默认 true）声明的 context7 被 omp 进程拉起。MCP 工具不作为独立工具出现，而是 `xd://mcp__<server>_<tool>` 设备，经 `write` 调用；lane-guard 拒绝任何 `协议://` 写入，实测拦下，lane 里的模型调用不到 MCP。但仓库自带的 `.omp/mcp.json` 里写的命令会在 lane 启动时以用户权限执行——派发不信任的仓库前先看一眼它。
+- (2026-11-02, herdr 0.9.0 + omp 18.15.0) omp 跑完 goal 后 herdr 报 `idle`，跑完一轮普通 prompt 后报 `done`。
 - (2026-11-02, omp 18.15.0) 4 个 omp 同时启动、同时请求模型：全部正常，没有 pi 那种配置锁冲突。
 - (2026-11-02, omp 18.15.0) 界面：工作中有一行 `Working…`，底栏首段是转圈符加秒数（`⠧ 4s · GLM-5.3 · Goal 0 · <dir> · <branch> · 0.6%/1M`）；空闲时输入框是两条 `───` 之间的 `❯`，底栏首段换成静态图标；上边框可能带会话标题（`─── 󰗇 GREET: … ─`）；扩展状态行（`🔒 lane-guard: …`）在最后。启动时先画大字 banner 和一条 Tip。
 - (2026-11-02, omp 18.15.0) print 模式下 stdin 不是终端时 omp 卡在 `readPipedInput`，要 `< /dev/null`（只影响探针，lane 是交互模式）。
@@ -53,7 +55,6 @@
 
 - omp 的选择框 / 确认框（`--strict` 下 lane-guard 询问）在 omp 里长什么样、herdr 那时报什么状态；omp 退出后的 pane。
 - goal 的 `paused` / `budget-limited` / `dropped` 在真实 lane 里出现时的样子。
-- 用户为 omp 配置了 MCP server 时，工具白名单是否仍把 MCP 工具全挡住。
 - Linux（bubblewrap）上的 lane-guard：以上沙箱事实都只在 macOS 上测过。
 - Gradle、yarn 没测过；Maven 3.9+ 的 `./mvnw` 经 `MAVEN_ARGS` 带 `-gs` 的路径没测过。
 - 长任务下 context 占满、compaction、provider 限流时 omp lane 的表现。

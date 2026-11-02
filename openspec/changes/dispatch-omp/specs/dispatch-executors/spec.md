@@ -105,15 +105,15 @@ omp's file-writing tools SHALL be allowed to write only inside the same writable
 - **THEN** the lane SHALL wait for approval and the next sweep SHALL report the request to the user
 
 ### Requirement: An omp lane runs only an allowlisted set of tools
-An omp lane SHALL start with only the tools needed to apply a change — read, the sandboxed shell, edit, write and the goal tool — available to the model. Code-evaluation, web, browser, sub-agent, file-search tools that the guard does not cover, structured-edit devices, MCP tools, the interactive pseudo-terminal shell and language-server tools SHALL NOT be available in the lane.
+An omp lane SHALL start with only the tools needed to apply a change — read, the sandboxed shell, edit, write and the goal tool — available to the model. Code-evaluation, web, browser, sub-agent, file-search tools that the guard does not cover, structured-edit devices, the interactive pseudo-terminal shell and language-server tools SHALL NOT be available in the lane, and MCP tools SHALL NOT be callable from it. MCP servers that omp itself starts from the user's or the repository's configuration are outside this requirement and are documented as such.
 
 #### Scenario: Model lists its tools
 - **WHEN** an omp lane's model is asked which tools it has
 - **THEN** only read, bash, edit, write and goal SHALL be available
 
-#### Scenario: User has MCP servers configured for omp
-- **WHEN** the user's omp configuration declares MCP servers and an omp lane starts
-- **THEN** no MCP tool SHALL be available in that lane
+#### Scenario: MCP servers configured for omp
+- **WHEN** the user's or the repository's omp configuration declares MCP servers and an omp lane calls one of their tools
+- **THEN** the call SHALL be blocked and the model SHALL receive the reason
 
 ### Requirement: An omp lane changes nothing in the user's omp configuration
 Starting an omp lane SHALL NOT install packages into, or write settings, model roles or trust decisions to, the user's omp configuration. The lane SHALL use the model the user set as omp's default.

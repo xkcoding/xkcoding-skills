@@ -25,6 +25,7 @@
 | O11 | 用户配置：`modelRoles.default = zhipu-coding-plan/glm-5.3`；`tools.approvalMode` 默认值是 `yolo`（源码 `tools/settings.ts`）；`omp models --json` 返回 `{"models": [...]}`，即已登录 provider 下可用的模型 |
 | O13 | （2026-11-02，实跑）刚建好的 pane 里立即 `herdr agent start` 一千多字符的 omp 命令，一次出现命令结尾丢字（`…git status is clea`）、引号未闭合、omp 没起来；pane 前台曾见到提示符钩子调用的 `gh`。偶发，未能稳定复现 |
 | O14 | （同上）`herdr agent start` 要等 agent 就绪才返回；omp 带 `--goal` 一启动就进入工作，herdr 有时 4 秒就返回，有时一直等到 goal 那一轮结束（实测一条 2 task lane 在 launch 返回时已经 `claims_done`），上限是 `--timeout` |
+| O15 | （2026-11-02，实跑）带 `--tools` 白名单时 omp 仍会在启动时于沙箱外拉起配置里的 MCP server（实测 worktree 里 `.omp/mcp.json` 声明的 context7 被 omp 进程拉起）；MCP 工具不作为独立工具出现，而是 `xd://mcp__<server>_<tool>` 设备，经 `write` 调用——lane-guard 拒绝任何 `协议://` 写入，实测拦下。用户决定不再追加关闭 MCP 的手段：MCP 不可调用即可，server 在沙箱外启动这一点写进文档 |
 | O12 | 界面：工作中有一行 `Working…`，底栏带转圈符与秒数（`⠧ 4s · GLM-5.3 · Goal 0 · <dir> · <branch> · 0.6%/1M`）；空闲时输入框是两条 `───` 之间的 `❯`，底栏首段换成静态图标；上边框可能带标题（`─── 󰗇 GREET: … ─`）；扩展状态行（`🔒 lane-guard: …`）在最后 |
 
 未实测：omp 的选择框 / 确认框长什么样（`--strict` 的 lane-guard 询问）、退出后的 pane、`paused` / `budget-limited` / `dropped` 的真实出现、Linux。
@@ -60,7 +61,7 @@ herdr agent start <name> --kind omp --pane <p> -- \
 - goal 在启动时下达（O1）。`launch` 因此需要 change 名来生成 goal 文本：执行者行的 `launch_flags` 增加参数，并新增 `goal_at_launch: True`。`launch` 成功时记 `goal_sent_at` / `goal_mode: "goal"`；`prompt --goal` / `--plain` 对这类 lane 一律以"已下达"拒绝（spec "Goal requested again"）。
 - `--approval-mode yolo`：omp 的审批层只决定"调用工具前问不问人"，用户若把全局默认改成会问的模式，无人值守的 lane 会卡在每条 bash 上（O11）。lane 的边界是沙箱 + 守卫 + 工具白名单，而不是 omp 的审批；`--strict` 的人工确认由 lane-guard 发起。确认页与文档如实写明。
 - 不传 `--model`：用 omp 的默认模型（spec 要求），doctor 校验存在且可用；`launch` 时读出写进 bookkeeping，供 `verify.md` 写"用的模型"。
-- 不传 MCP 相关参数：工具白名单本身就不含 MCP 工具（O7）；任务 4.x 用一个声明了 MCP server 的临时 omp 配置验证这一点，不成立再改为 `--config` 叠加关闭 MCP。
+- 不传 MCP 相关参数：MCP 工具只能经 `write xd://mcp__…` 调用，守卫一律拒绝（O15）。omp 仍会在沙箱外启动配置里的 MCP server（含仓库自带的 `.omp/mcp.json`）——用户接受，文档如实写明。
 
 ### D3：lane-guard 对 `read` 收窄到普通路径与 `skill://`
 

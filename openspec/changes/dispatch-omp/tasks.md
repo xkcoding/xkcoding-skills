@@ -9,10 +9,10 @@
 ## 1. 引擎：pi 行换成 omp 行（spec `dispatch-executors`；design D1、D2、D4、D5）
 
 - [x] 1.1 沙箱策略相关的函数与常量去掉 `pi_` 前缀（`guard_policy`、`guard_cache_dirs`、`GUARD_DIR`、`PUBLIC_REGISTRIES` 等），删除 `pi_goal_probe`、`pi_layout` / `pi_pane_state` / `pi_input_box`、`pi_startup_problem`、`pi_launch_flags`、`pi_label`、`PI_GOAL_EXTENSION` 与 `EXECUTORS["pi"]`；验证：`grep -n "pi_\|PI_\|\"pi\"" lane.py` 无命中（`openspec` 等无关词除外），`python3 -m py_compile` 通过；`compare` 脚本确认 codex 的启动参数与 prompt 文本仍逐字节不变
-- [ ] 1.2 `EXECUTORS["omp"]`：`launch_flags(strict, common, policy, goal_text)` 产出 design D2 的参数（含 `--approval-mode yolo`、白名单、`--no-pty --no-lsp`、`-e <GUARD_DIR> --lane-policy`、`--goal`）；新增 `goal_at_launch: True`，`launch` 成功即记 `goal_sent_at` / `goal_mode`，`prompt --goal|--plain` 对这类 lane 拒绝；`launch` 记下 omp 默认模型；`launch_gap: 0`、无 `startup_problem`；验证：对构造的 lane 调 `launch_flags` 得到预期 argv；对 `goal_at_launch` 的 lane 调 `prompt --goal` 返回"已下达"
+- [x] 1.2 `EXECUTORS["omp"]`：`launch_flags(strict, common, policy, goal_text)` 产出 design D2 的参数（含 `--approval-mode yolo`、白名单、`--no-pty --no-lsp`、`-e <GUARD_DIR> --lane-policy`、`--goal`）；新增 `goal_at_launch: True`，`launch` 成功即记 `goal_sent_at` / `goal_mode`，`prompt --goal|--plain` 对这类 lane 拒绝；`launch` 记下 omp 默认模型；`launch_gap: 0`、无 `startup_problem`；验证：对构造的 lane 调 `launch_flags` 得到预期 argv；对 `goal_at_launch` 的 lane 调 `prompt --goal` 返回"已下达"
 - [x] 1.3 omp 的 goal 探针（design D4）：解析 `mode_change.data.goal` 与 `goal-completed`，跳过 null goal，连字符规范为下划线；verdict 增加 `goal_dropped`（与 `goal_paused` / `goal_budget_limited` 相同：上报、不恢复，上报后转为 `awaiting_user`）；验证：用 O5 形态构造的 JSONL 样例（只有 active；active→complete 后接 null 的 mode_change；只有 goal-completed；budget-limited；dropped；空文件；缺文件；格式异常行）得到 `active` / `complete` / `complete` / `budget_limited` / `dropped` / `unavailable` / `unavailable` / 不崩
 - [x] 1.4 omp 的 `pane_state` / `input_box`（design D5）：先用 O12 已抓到的文本做样例（启动 banner + Working、工作中底栏转圈、空闲 `❯`、带标题的上边框、输入框有字）；`idle` / `done` 都视为不在工作；验证：样例分类为 `working` / `working` / `ready` / `ready` / `typed`，`input_box` 取出所发文字
-- [ ] 1.5 `record-verify` 的 `executor:` 行写 `omp <版本>` 并另起一行写模型；评审正文出处写 omp；验证：对 omp lane 生成的 `verify.md` 与评审正文里含 omp 版本与模型，除扩展名外不出现 `codex`、`pi`
+- [x] 1.5 `record-verify` 的 `executor:` 行写 `omp <版本>` 并另起一行写模型；评审正文出处写 omp；验证：对 omp lane 生成的 `verify.md` 与评审正文里含 omp 版本与模型，除扩展名外不出现 `codex`、`pi`
 - [x] 1.6 `doctor.sh`：`--executor pi` 换成 `--executor omp`（design D6），codex 分支输出不变；验证：本机 `--executor codex` 与改动前 diff 为空；`--executor omp` 报出 omp 版本、默认模型及其可用性、herdr omp 集成状态、仓库 skill 是否提交，`--executor pi` 返回用法错误
 - [x] 1.7 `dispatch/sync-engine.sh` 目标改为 `dispatch/omp/scripts`，`git mv dispatch/pi dispatch/omp` 后同步引擎；验证：`dispatch/sync-engine.sh --check` 退出 0，`dispatch/pi/` 不存在
 
@@ -28,8 +28,8 @@
 
 ## 4. 真跑验收（`/tmp` 一次性仓库 + herdr）
 
-- [ ] 4.1 omp 端到端：一个 2 task 的 change 按 `/dispatch:omp` 的流程走 `plan → create → launch（即下达 goal）→ list`，直到 `claims_done`，再 `record-verify` 与 `publish` 到本地 bare origin；验证：每 task 一个 commit，`list` 显示执行者 `omp`、goal `complete`，`verify.md` 写 omp 版本与模型；`~/.omp/agent` 下的 config 与 `omp plugin list` 前后一致
-- [ ] 4.2 边界探针（经 omp 的工具调用，以 JSON 事件流与文件系统为准）：worktree 内 commit、bash 写主 checkout、`write` / `edit` 越界、改写 `.git` 指针、`read` 读 `https://example.com` 与 `ssh://` / `proc://` 地址、`read` 读诱饵禁读目录、`npm install`；再在一个声明了 MCP server 的临时 omp 配置下启动，确认模型可用工具仍只有白名单那几个；验证：commit 与 `npm install` 成功，其余全部被拒且无文件变化、无网页内容进入事件流，MCP 工具不出现
+- [x] 4.1 omp 端到端：一个 2 task 的 change 按 `/dispatch:omp` 的流程走 `plan → create → launch（即下达 goal）→ list`，直到 `claims_done`，再 `record-verify` 与 `publish` 到本地 bare origin；验证：每 task 一个 commit，`list` 显示执行者 `omp`、goal `complete`，`verify.md` 写 omp 版本与模型；`~/.omp/agent` 下的 config 与 `omp plugin list` 前后一致
+- [x] 4.2 边界探针（经 omp 的工具调用，以 JSON 事件流与文件系统为准）：worktree 内 commit、bash 写主 checkout、`write` / `edit` 越界、改写 `.git` 指针、`read` 读 `https://example.com` 与 `ssh://` / `proc://` 地址、`read` 读诱饵禁读目录、`npm install`；再在一个声明了 MCP server 的临时 omp 配置下启动，确认模型可用工具仍只有白名单那几个；验证：commit 与 `npm install` 成功，其余全部被拒且无文件变化、无网页内容进入事件流，MCP 工具不出现
 - [ ] 4.3 界面与 `--strict`：抓下 omp 退出后、选择框（`--strict` 下越界写触发 lane-guard 询问）两种 pane 原文补进 `pane_state` 样例与 known-behaviors；验证：`list` 对等待询问的 lane 给出 `blocked`，多余回车只会拒绝，退出后的 lane 被识别为 `exited` / `no_agent`
 - [ ] 4.4 混跑与 pi 退役：同一临时仓库一条 codex lane、一条 omp lane 跑完，再造一条记录为 `executor: pi` 的 lane；验证：两份引擎的 `list` 输出逐字相同，codex lane 走到 `claims_done`，pi lane 显示 `unknown_executor` 且巡检不向它发送任何输入
 - [ ] 4.5 清理：先 `herdr worktree remove --force` 再删临时目录，删对应的 omp session 与本机记录，codex 配置若被写入信任条目则按备份删除；验证：`herdr workspace list` 无实验 workspace，`/tmp` 无实验目录，`~/.codex/config.toml` 与开始前一致
