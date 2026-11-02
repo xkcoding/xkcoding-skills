@@ -4,11 +4,11 @@
 
 ## 0. 前置
 
-- [ ] 0.1 从 main 拉 `feat/dispatch-pi` 分支，把本 change 目录作为首个 commit（`docs(openspec): propose dispatch-pi`）；验证：`git branch --show-current` 为 `feat/dispatch-pi`，`openspec validate dispatch-pi --strict` 通过
+- [x] 0.1 从 main 拉 `feat/dispatch-pi` 分支，把本 change 目录作为首个 commit（`docs(openspec): propose dispatch-pi`）；验证：`git branch --show-current` 为 `feat/dispatch-pi`，`openspec validate dispatch-pi --strict` 通过
 
 ## 1. 引擎改为执行者无关（spec `dispatch-executors`；codex 行为不变）
 
-- [ ] 1.1 在 `dispatch/codex/scripts/lane.py` 引入 `EXECUTORS` 适配表（design D1），把 codex 的 launch 参数、goal / continue / correct / resume 文本、`goal_probe`、`pane_state`、"已下达 goal"的证据、版本命令、verify / 评审出处文案搬进 `codex` 一行，其余代码只经表访问；验证：`python3 -m py_compile` 通过，`grep -n '"codex"\|codex' lane.py` 的命中只在适配表、docstring 与注释里；对同一 lane 构造的 codex `herdr agent start` argv 与改动前逐项相同
+- [x] 1.1 在 `dispatch/codex/scripts/lane.py` 引入 `EXECUTORS` 适配表（design D1），把 codex 的 launch 参数、goal / continue / correct / resume 文本、`goal_probe`、`pane_state`、"已下达 goal"的证据、版本命令、verify / 评审出处文案搬进 `codex` 一行，其余代码只经表访问；验证：`python3 -m py_compile` 通过，`grep -n '"codex"\|codex' lane.py` 的命中只在适配表、docstring 与注释里；对同一 lane 构造的 codex `herdr agent start` argv 与改动前逐项相同
 - [ ] 1.2 执行者成为 lane 属性（design D2）：`plan` / `create` / `launch` 接受 `--executor codex|pi`，`launch` 写入 bookkeeping；`list` 按 herdr agent 类型 → bookkeeping → `unknown` 推出执行者，`unknown` 的 lane verdict 不进入任何会发送输入的分支；`list --table` 增加执行者列；`plan` 对已有 lane 的 change 返回该 lane 的执行者；验证：临时仓库里 `create` 一条 lane 不启动 agent，`list` 显示 `unknown`；写入 bookkeeping 的 `executor: pi` 后显示 `pi`；删掉该字段、旧格式 bookkeeping 下 herdr 报 codex 的 lane 显示 `codex`
 - [ ] 1.3 `record-verify` 的 `executor:` 行与 `publish` 正文出处行取自该 lane 的执行者（design D8）；验证：对 pi lane 生成的 `verify.md` 与评审正文文件 grep 不到 `codex`，含 pi 与 pi-codex-goal 的版本
 - [ ] 1.4 `doctor.sh` 增加 `--executor codex|pi`（design D7），codex 分支输出与改动前字段一致；pi 分支检测 pi、node ≥ 24、rg、skill 目录内 sandbox-runtime 版本、`pi auth check --no-refresh`（不带 `--credentials`）、Linux 的 bwrap / socat、目标仓库已提交的 `.pi/skills` 或 `.agents/skills` 里的 apply skill；验证：本机 `--executor codex` 的 JSON 与改动前 diff 只多 `executor` 字段；`--executor pi` 在未装 sandbox 依赖时 `required_tools` 里该项 `ok:false`，不报 codex 缺失
