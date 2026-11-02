@@ -1,0 +1,246 @@
+/**
+ * lane-guard — the boundary of a /dispatch:pi lane.
+ *
+ * - Shell: pi's `bash` tool and user `!` commands run inside @anthropic-ai/sandbox-runtime (Seatbelt on
+ *   macOS, bubblewrap on Linux). Without a policy, or when the sandbox cannot start, every shell command is
+ *   refused: nothing ever falls back to an unsandboxed shell.
+ * - Files: `write` and `edit` may only touch the policy's writable roots minus its denied paths. The default
+ *   posture blocks anything else and tells the model why; the strict posture asks a human instead.
+ *
+ * The policy comes only from `--lane-policy <file>`, written by lane.py outside the repository. Nothing is
+ * read from the lane's own files, so the repository cannot widen its own boundary.
+ */
+
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
+import type { BashOperations, ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createBashTool } from "@earendil-works/pi-coding-agent";
+
+interface LanePolicy {
+	version: number;
+	posture: "block" | "strict";
+	tmpDir?: string;
+	env?: Record<string, string>;
+	allowWrite: string[];
+	denyWrite: string[];
+	denyRead: string[];
+	allowedDomains: string[];
+}
+
+// Resolve symlinks on the nearest existing ancestor, so /tmp/... and /private/tmp/... compare equal.
+function canonical(path: string): string {
+	let head = path;
+	const tail: string[] = [];
+	while (!existsSync(head) && dirname(head) !== head) {
+		tail.unshift(head.slice(dirname(head).length + 1));
+		head = dirname(head);
+	}
+	return resolve(realpathSync(head), ...tail);
+}
+
+// A tool's path argument, absolute and with symlinks resolved; "~" means the home directory, as in a shell.
+function toolPath(raw: unknown, cwd: string): string {
+	let p = String(raw ?? "").trim() || ".";
+	if (p === "~" || p.startsWith("~/")) p = homedir() + p.slice(1);
+	return canonical(isAbsolute(p) ? p : resolve(cwd, p));
+}
+
+function within(path: string, root: string): boolean {
+	return path === root || path.startsWith(root + sep);
+}
+
+function loadPolicy(file: string): LanePolicy {
+	const p = JSON.parse(readFileSync(file, "utf-8")) as LanePolicy;
+	const lists = [p.allowWrite, p.denyWrite, p.denyRead, p.allowedDomains];
+	if (p.version !== 1 || !lists.every(Array.isArray) || !p.allowWrite.length) {
+		throw new Error("malformed lane policy");
+	}
+	if (p.posture !== "block" && p.posture !== "strict") throw new Error(`unknown posture ${p.posture}`);
+	if (p.tmpDir !== undefined && typeof p.tmpDir !== "string") throw new Error("tmpDir must be a path");
+	for (const [k, v] of Object.entries(p.env ?? {})) {
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || typeof v !== "string") throw new Error(`bad env entry ${k}`);
+	}
+	return p;
+}
+
+function shellQuote(s: string): string {
+	return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+// Runs inside the sandbox before every command, where the sandbox's proxy is known (known-behaviors P21):
+// TMPDIR moves to the lane's own temp dir; Node's built-in fetch is told to use the proxy; the JVM gets an
+// IPv4 socket (the proxy is unreachable over its default IPv6 one) and a writable java.io.tmpdir; Maven, whose
+// HTTP transport ignores the JVM's proxy properties, gets a global settings file holding only <proxies>.
+function prelude(tmpDir: string | undefined, env: Record<string, string> = {}): string {
+	const exports = Object.entries(env).map(([k, v]) => `export ${k}=${shellQuote(v)}\n`).join("");
+	if (!tmpDir) return `${exports}export NODE_USE_ENV_PROXY=1\n`;
+	const tmp = shellQuote(tmpDir);
+	const settings = shellQuote(`${tmpDir}/maven-proxy-settings.xml`);
+	const proxy = (id: string, protocol: string) =>
+		`<proxy><id>${id}</id><active>true</active><protocol>${protocol}</protocol><host>127.0.0.1</host><port>%s</port></proxy>`;
+	return exports + [
+		`export TMPDIR=${tmp} NODE_USE_ENV_PROXY=1`,
+		`export JAVA_TOOL_OPTIONS="-Djava.net.preferIPv4Stack=true -Djava.io.tmpdir=$TMPDIR\${JAVA_TOOL_OPTIONS:+ $JAVA_TOOL_OPTIONS}"`,
+		`if [ -n "\${HTTPS_PROXY:-}" ]; then`,
+		`  __lane_port=\${HTTPS_PROXY##*:}; __lane_port=\${__lane_port%%/*}`,
+		`  __lane_gs=${settings}`,
+		`  printf '<settings><proxies>${proxy("lane-https", "https")}${proxy("lane-http", "http")}</proxies></settings>\\n' "$__lane_port" "$__lane_port" > "$__lane_gs"`,
+		// MAVEN_ARGS is word-split by Maven's launcher (3.9+, e.g. ./mvnw): no quotes inside it.
+		`  export MAVEN_ARGS="-gs $__lane_gs\${MAVEN_ARGS:+ $MAVEN_ARGS}"`,
+		`  mvn() { MAVEN_ARGS= command mvn -gs "$__lane_gs" "$@"; }`,
+		`  export __lane_gs`,
+		`  export -f mvn`,
+		`fi`,
+		"",
+	].join("\n");
+}
+
+function sandboxedOps(policy: LanePolicy | undefined): BashOperations {
+	return {
+		async exec(command, cwd, { onData, signal, timeout }) {
+			if (!existsSync(cwd)) throw new Error(`Working directory does not exist: ${cwd}`);
+			const wrapped = await SandboxManager.wrapWithSandbox(prelude(policy?.tmpDir, policy?.env) + command);
+			return new Promise((resolvePromise, reject) => {
+				const child = spawn("bash", ["-c", wrapped], { cwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+				const kill = () => {
+					if (!child.pid) return;
+					try {
+						process.kill(-child.pid, "SIGKILL");
+					} catch {
+						child.kill("SIGKILL");
+					}
+				};
+				let timedOut = false;
+				const timer =
+					timeout && timeout > 0
+						? setTimeout(() => {
+								timedOut = true;
+								kill();
+							}, timeout * 1000)
+						: undefined;
+				child.stdout?.on("data", onData);
+				child.stderr?.on("data", onData);
+				child.on("error", (err) => {
+					if (timer) clearTimeout(timer);
+					reject(err);
+				});
+				signal?.addEventListener("abort", kill, { once: true });
+				child.on("close", (code) => {
+					if (timer) clearTimeout(timer);
+					signal?.removeEventListener("abort", kill);
+					if (signal?.aborted) reject(new Error("aborted"));
+					else if (timedOut) reject(new Error(`timeout:${timeout}`));
+					else resolvePromise({ exitCode: code });
+				});
+			});
+		},
+	};
+}
+
+export default function (pi: ExtensionAPI) {
+	pi.registerFlag("lane-policy", {
+		description: "Sandbox and write policy of a /dispatch:pi lane (JSON written by lane.py)",
+		type: "string",
+		default: "",
+	});
+
+	const cwd = process.cwd();
+	const localBash = createBashTool(cwd);
+	let policy: LanePolicy | undefined;
+	let roots: string[] = [];
+	let denied: string[] = [];
+	let unreadable: string[] = [];
+	// Fail closed: until the sandbox is up, this is the reason every shell command is refused.
+	let refusal: string | undefined = "lane-guard has not started yet";
+
+	pi.registerTool({
+		...localBash,
+		label: "bash (lane sandbox)",
+		async execute(id, params, signal, onUpdate) {
+			if (refusal) throw new Error(`lane-guard refused the shell command: ${refusal}`);
+			const sandboxed = createBashTool(cwd, { operations: sandboxedOps(policy) });
+			return sandboxed.execute(id, params, signal, onUpdate);
+		},
+	});
+
+	pi.on("user_bash", () => {
+		if (refusal) throw new Error(`lane-guard refused the shell command: ${refusal}`);
+		return { operations: sandboxedOps(policy) };
+	});
+
+	pi.on("tool_call", async (event, ctx) => {
+		const raw = (event.input as { path?: unknown }).path;
+		// pi's own file readers run outside the OS sandbox, so the sandbox's denyRead has to be enforced here.
+		if (["read", "grep", "find", "ls"].includes(event.toolName)) {
+			if (!policy) return { block: true, reason: `lane-guard has no policy: ${refusal}` };
+			const target = toolPath(raw, ctx.cwd);
+			// grep and find recurse, so searching an ancestor of a protected directory reads it too.
+			const recursive = event.toolName === "grep" || event.toolName === "find";
+			const hit = unreadable.find((d) => within(target, d) || (recursive && within(d, target)));
+			return hit ? { block: true, reason: `${target} reaches ${hit}, which this lane may not read` } : undefined;
+		}
+		if (event.toolName !== "write" && event.toolName !== "edit") return undefined;
+		if (!policy) return { block: true, reason: `lane-guard has no policy: ${refusal}` };
+		const target = toolPath(raw, ctx.cwd);
+		const inside = roots.some((r) => within(target, r)) && !denied.some((d) => within(target, d));
+		if (inside) return undefined;
+		const reason = `${target} is outside this lane's writable paths (the lane worktree, the repository's git directory except its hooks and config, package-manager caches, and the lane's temp directory)`;
+		if (policy.posture === "strict" && ctx.hasUI) {
+			// "Deny" comes first so that a stray enter can never approve the write.
+			const choice = await ctx.ui.select(`lane-guard: allow ${event.toolName} outside the lane?\n  ${target}`, [
+				"Deny",
+				"Allow",
+			]);
+			if (choice === "Allow") return undefined;
+			return { block: true, reason: `${reason}; a human declined it` };
+		}
+		return { block: true, reason };
+	});
+
+	pi.on("session_start", async (_event, ctx) => {
+		const fail = (why: string) => {
+			refusal = why;
+			ctx.ui.setStatus("lane-guard", `⛔ lane-guard: shell refused (${why})`);
+			ctx.ui.notify(`lane-guard: ${why}; shell commands are refused`, "error");
+		};
+		const file = String(pi.getFlag("lane-policy") ?? "");
+		if (!file) return fail("no --lane-policy given");
+		try {
+			policy = loadPolicy(file);
+		} catch (err) {
+			return fail(`cannot read the lane policy ${file}: ${err instanceof Error ? err.message : err}`);
+		}
+		roots = policy.allowWrite.map((p) => canonical(p));
+		denied = policy.denyWrite.map((p) => canonical(p));
+		unreadable = policy.denyRead.map((p) => canonical(p));
+		if (process.platform !== "darwin" && process.platform !== "linux") {
+			return fail(`no OS sandbox on ${process.platform}`);
+		}
+		try {
+			await SandboxManager.initialize({
+				network: { allowedDomains: policy.allowedDomains, deniedDomains: [] },
+				filesystem: { denyRead: policy.denyRead, allowWrite: policy.allowWrite, denyWrite: policy.denyWrite },
+			});
+		} catch (err) {
+			return fail(`sandbox did not start: ${err instanceof Error ? err.message : err}`);
+		}
+		refusal = undefined;
+		ctx.ui.setStatus(
+			"lane-guard",
+			`🔒 lane-guard: ${policy.posture}, ${policy.allowWrite.length} write roots, ${policy.allowedDomains.length} domains`,
+		);
+	});
+
+	pi.on("session_shutdown", async () => {
+		if (!refusal) {
+			try {
+				await SandboxManager.reset();
+			} catch {
+				// nothing left to clean up
+			}
+		}
+	});
+}

@@ -78,6 +78,16 @@
 - `dispatch/codex/scripts/lane.py` — lane 的全部机械操作（plan / create / launch / prompt / list / record-verify / publish / forge / note），纯 Python 标准库，每个子命令输出一个 JSON
 - `dispatch/codex/references/` — `setup.md`（安装与上手引导）、`known-behaviors.md`（带日期与版本的 herdr / codex / openspec 行为记录）
 
+### dispatch:pi（MVP）
+
+`/dispatch:pi`：与 `dispatch:codex` 同一套流程，执行者换成 pi（模型与凭据用 pi 自己的配置，可接 GLM 等第三方模型）。pi 自身没有沙箱，lane 的边界由随 skill 发布的 lane-guard 扩展给出：shell 在 sandbox-runtime 里（只可写 lane worktree、主仓库 `.git`——`hooks` / `config` 除外——、各包管理器缓存与 lane 私有临时目录；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源；不走代理的工具由 lane-guard 在沙箱里配好；沙箱起不来就拒绝），`write` / `edit` 越界即拦（`--strict` 下问人，默认拒绝）。goal 用固定版本的 `pi-codex-goal`，启动时 `-e` 加载，不改用户的 pi 配置。多条 pi lane 逐条启动、彼此错开（pi 的配置锁会让同时启动的进程读不到模型）。仅 macOS / Linux。
+
+**结构**（单个自包含 skill）：
+- `dispatch/pi/SKILL.md` — 与 codex 的 SKILL.md 同构，执行者相关处按 pi 写
+- `dispatch/pi/scripts/lane.py`、`doctor.sh` — 与 `dispatch/codex/scripts/` 下的**逐字节相同**（引擎执行者无关，执行者相关的都在 `lane.py` 的 `EXECUTORS` 表里；任一入口的 `status` 都管全部 lane）
+- `dispatch/pi/scripts/lane-guard/` — pi 扩展（`index.ts`）与钉死的 `@anthropic-ai/sandbox-runtime` 依赖（`package-lock.json` 随仓库，`node_modules/` 由 setup 征得同意后 `npm ci`）
+- `dispatch/pi/references/` — `setup.md`、`known-behaviors.md`（带日期与版本的 herdr / pi / pi-codex-goal / lane-guard 行为）
+
 **写 skill 的品味标杆**：本机的 web-access 与 baoyu-skills——确定性的活进脚本、目录自包含、原则先行且精简、skill 文本里不出现开发过程的编号。
 
 ## 开发规范
@@ -86,6 +96,7 @@
 - 知识文档放 `references/`，可执行脚本放 `scripts/`，评测用例放 `evals/evals.json`（可选）
 - marketplace 注册在 `.claude-plugin/marketplace.json`
 - 中文注释和文档，代码标识符保持英文
+- dispatch 的引擎（`lane.py`、`doctor.sh`）只改 `dispatch/codex/scripts/`，改完运行 `dispatch/sync-engine.sh`；提交前 `dispatch/sync-engine.sh --check` 必须通过
 
 ## OpenSpec 使用
 

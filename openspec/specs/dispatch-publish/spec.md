@@ -72,11 +72,15 @@ The user's choice for a host SHALL be stored outside the repository, keyed by ho
 - **THEN** the orchestrator SHALL stop, surface the rejection, and SHALL NOT force the push
 
 ### Requirement: The review request tells the reviewer what they are reading
-The review request body SHALL contain the final state of the task list, the verification result for each task, any recorded deviation, and a provenance line naming the change, the executor with its version, and the approval posture it ran under.
+The review request body SHALL contain the final state of the task list, the verification result for each task, any recorded deviation, and a provenance line naming the change, the lane's executor with its version, and the approval posture it ran under.
 
 #### Scenario: Reviewer opens the review request
 - **WHEN** a review request is opened by the orchestrator
-- **THEN** its body SHALL state that the code was written by codex and under which posture
+- **THEN** its body SHALL state which executor wrote the code and under which posture
+
+#### Scenario: Pi lane published
+- **WHEN** a verified pi lane is published
+- **THEN** its review request and its `verify.md` SHALL name pi with its version, the goal extension version, and the pi posture, and SHALL NOT name codex
 
 ### Requirement: Publishing degrades with a stated reason
 When there is no remote, the orchestrator SHALL leave the lane verified and report it as local only. When the forge tool chosen for the host is missing or unauthenticated, or `--no-pr` was given, it SHALL push, state the reason, and give the user what is needed to open the review request themselves. When the base branch does not exist on the remote, it SHALL push and SHALL NOT open a review request against a substituted base. Publishing SHALL be safe to repeat, and after three failed attempts the orchestrator SHALL stop retrying and hand the command to the user.

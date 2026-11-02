@@ -11,6 +11,7 @@
 - (2026-09-18, 0.154) 未受信任目录下默认只读沙箱；此时 `--add-dir` 报 `Ignoring --add-dir … because the effective permissions do not allow additional writable roots` 并立刻退出。所以严格姿态必须**显式**传 `--sandbox workspace-write`。
 - (2026-09-18, 0.154) 启动期升级弹层：`Update available!`，默认高亮 `1. Update now (runs brew upgrade --cask codex)`，`2. Skip`，`3. Skip until next version`。发按键 `2` 即选中并确认。每逢新版本它都会回来。
 - (2026-09-18, 0.154–0.155) 启动期 trust 弹层：`Do you trust the contents of this directory?`，注明 "Trusting will apply to the repository root"，默认 `1. Yes, continue`。接受后写入 `~/.codex/config.toml` 的 `[projects."<主仓库根>"] trust_level = "trusted"`。
+- (2026-11-02, codex-cli 0.165.0) 信任弹层的文案变为 `Trust this folder? …`，选项 `1. Trust and continue` / `2. Quit`，提示行 `enter continue · esc quit`。在它上面按 esc 后 codex **没有退出**，而是进入了输入框；同时 `~/.codex/config.toml` 已写入该仓库根的 `trust_level = "trusted"`（文件修改时间早于按 esc，因果不明）。所以不要用 esc 去拒绝信任：要拒绝就选 `2. Quit`；遇到就核对 config.toml。
 - (2026-09-18, 0.155) lane 正在工作时再收到一条 `/goal …`：未见 `Replace goal?` 弹层，原 goal 照常完成。不要依赖这一点——`lane.py` 本来就不会在 lane 工作时发送。
 - (2026-09-18, 0.154–0.155) goal 的权威状态在 `~/.codex/goals_1.sqlite` 的 `thread_goals` 表（`thread_id` = herdr 报告的 session id；`status` ∈ `active` / `paused` / `blocked` / `usage_limited` / `budget_limited` / `complete`）。`~/.codex/sqlite/goals_1.sqlite` 也存在但是空的。
 - (2026-09-18, 0.155) 3 条 lane 并行、各 3 个小 task：每条约 2.7–3.1 万 token、52–78 秒。

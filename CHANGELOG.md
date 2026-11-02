@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **dispatch:pi**（新 Skill，`dispatch` 插件）：`/dispatch:pi` 把已 propose 的 OpenSpec change 派发给 pi，流程与 `/dispatch:codex` 相同（派发 → 巡检 → 亲手验收 → `verify.md` → push → draft 评审请求）
+  - lane-guard 扩展给出 lane 的边界：shell 在 sandbox-runtime（macOS Seatbelt / Linux bubblewrap）里跑，只可写 lane worktree、主仓库 `.git`（`hooks` / `config` 除外）、各包管理器缓存与 lane 私有临时目录，网络只放行公共包源与本机为 npm / pip / Go / Maven / Cargo 配置的源，沙箱起不来时一律拒绝；在沙箱里替不走代理的工具配好代理（Node `fetch`、JVM、Maven settings 与 `mvn` 包装）并固定 pnpm store，实测 pip、uv、npm、pnpm、bun、Go、Maven、Cargo 都能装依赖；`write` / `edit` 越界即拦，`--strict` 下改为问人且默认拒绝
+  - goal 用固定版本的 `pi-codex-goal`（`-e npm:` 只为本次运行加载），项目信任用 `--approve`（只对本次运行生效）；不改用户的 pi 配置，lane 里关闭 MCP
+  - 多条 pi lane 逐条启动、goal 逐条下达，彼此错开 4 秒；pi 抢配置锁失败时会带着 `unknown` 模型起来，`launch` 识别后自行重启一次
+  - 发出的 prompt 会核对是否真的提交，只在输入框里正是刚发的文字时补一次回车；pi 的选择框等人时 herdr 仍报 `working`，巡检读 pane 改判为 `blocked`
+- 审查后加固：pi lane 不能再改写 worktree 的 `.git` 指针与管理目录里的 `commondir` / `gitdir` / `config.worktree`（否则可让沙箱外的 git 执行仓库配置里的程序），`lane.py` 的 git 一律关闭 fsmonitor；pi 自带的 `read` / `grep` / `find` / `ls` 也执行禁读名单；npm 镜像的同域通配不再扩到 `*.com.cn` 这类公共后缀；`doctor.sh --executor` 缺值不再死循环；无模型重启前若首个 pi 停不下来就不再起第二个；旧版本留下、没有执行者字段的记录按 codex 处理
+- `dispatch/sync-engine.sh`：把引擎从 `dispatch/codex/scripts/` 同步到其他执行者，`--check` 校验逐字节一致
+
+### Changed
+
+- **dispatch:codex** 0.2.0：引擎改为执行者无关（`lane.py` 的 `EXECUTORS` 表）；`plan` / `create` / `launch` 需要 `--executor`，`doctor.sh` 接受 `--executor codex|pi`；执行者成为每条 lane 的属性（herdr 报告的 agent 类型 → 本机记录 → unknown），`status` 覆盖 codex 与 pi 的全部 lane，`list --table` 增加执行者列，新增 `unknown_executor` 判定；codex 的启动参数与 prompt 文本逐字节不变
+- **skill-craft**：`check.py` 不再遍历 `node_modules` 与 `__pycache__`
+
 ## [0.7.0] - 2026-10-19
 
 ### Added

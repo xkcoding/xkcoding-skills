@@ -17,7 +17,7 @@ A sweep SHALL derive the set of lanes and each lane's progress from the reposito
 - **THEN** the sweep SHALL report the lane's progress and SHALL NOT read progress from the main checkout
 
 ### Requirement: Disposable bookkeeping only
-The supervisor MAY keep machine-local bookkeeping outside the repository for facts that cannot be derived, limited to: lane session identifiers, the approval posture and pull-request base a lane was launched with, when its goal was sent, nudge records, recorded escalations, and publishing attempts. Deleting that bookkeeping SHALL NOT lose any work state or change any lane's reported progress.
+The supervisor MAY keep machine-local bookkeeping outside the repository for facts that cannot be derived, limited to: the executor a lane was launched with, lane session identifiers, the approval posture and pull-request base a lane was launched with, when its goal was sent, nudge records, recorded escalations, and publishing attempts. Deleting that bookkeeping SHALL NOT lose any work state or change any lane's reported progress.
 
 #### Scenario: Bookkeeping deleted mid-run
 - **WHEN** the bookkeeping is removed while lanes are running
@@ -28,7 +28,7 @@ The supervisor MAY keep machine-local bookkeeping outside the repository for fac
 - **THEN** the sweep SHALL still report that lane as published rather than as having pushed itself
 
 ### Requirement: The overview is one line per lane
-Each sweep SHALL report one line per lane giving the change, the agent status, completed and total tasks, the number of lane commits, whether the working tree is clean, and the pull request if one exists. It SHALL NOT print raw JSON.
+Each sweep SHALL report one line per lane giving the change, the executor, the agent status, completed and total tasks, the number of lane commits, whether the working tree is clean, and the pull request if one exists. It SHALL NOT print raw JSON.
 
 #### Scenario: Four lanes
 - **WHEN** four lanes exist
@@ -85,7 +85,7 @@ When a lane is blocked on an approval request, the supervisor SHALL report the r
 - **THEN** the supervisor SHALL surface the quoted request and leave the lane untouched
 
 ### Requirement: A parked goal is resumed only when nobody parked it on purpose
-When codex reports a lane's goal as limited by usage, the supervisor SHALL resume it at most once per sweep. When the goal is paused and the supervisor has no record of pausing it, or when the goal is blocked or limited by a budget, the supervisor SHALL escalate and SHALL NOT resume it.
+When the lane's executor reports its goal as limited by usage, the supervisor SHALL resume it at most once per sweep. When the goal is paused and the supervisor has no record of pausing it, or when the goal is blocked or limited by a budget, the supervisor SHALL escalate and SHALL NOT resume it. Goal states that an executor does not report SHALL NOT be inferred from the pane.
 
 #### Scenario: Usage limit hit
 - **WHEN** a lane's goal is reported as usage-limited
@@ -94,6 +94,10 @@ When codex reports a lane's goal as limited by usage, the supervisor SHALL resum
 #### Scenario: Goal paused by an unknown hand
 - **WHEN** a lane's goal is paused and no pause is recorded for it
 - **THEN** the supervisor SHALL NOT resume it and SHALL report the lane as waiting on the user
+
+#### Scenario: Pi goal blocked
+- **WHEN** a pi lane's goal is reported as blocked
+- **THEN** the supervisor SHALL escalate the lane with the recorded reason and SHALL NOT resume it
 
 ### Requirement: Supervision recurs until every lane is settled
 After a dispatch, unless `--no-loop` was given, a recurring sweep SHALL be armed and the user SHALL be told how to stop it. The recurrence SHALL end when every lane is published, failed, paused by the user, or waiting on the user. Invoking the status sub-command in a session without an armed recurrence SHALL re-arm it while unsettled lanes remain.

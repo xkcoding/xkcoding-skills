@@ -95,7 +95,9 @@ def script_syntax(path):
 def walk(root, sub):
     out = []
     base = os.path.join(root, sub)
-    for dirpath, _dirs, files in os.walk(base):
+    for dirpath, dirs, files in os.walk(base):
+        # Installed dependencies are not part of what the skill's author wrote.
+        dirs[:] = [d for d in dirs if d not in ("node_modules", "__pycache__")]
         for f in sorted(files):
             if f.startswith(".") or f.endswith((".pyc",)):
                 continue

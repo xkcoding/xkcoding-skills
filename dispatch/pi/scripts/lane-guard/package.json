@@ -1,0 +1,15 @@
+{
+  "name": "dispatch-pi-lane-guard",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Keeps a /dispatch:pi lane inside its worktree: OS sandbox for shell commands, path guard for file tools",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.26"
+  }
+}

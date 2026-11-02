@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""lane.py - the mechanical half of /dispatch:codex.
+"""lane.py - the mechanical half of /dispatch:codex and /dispatch:pi.
+
+The same file ships in both skills (dispatch/sync-engine.sh keeps the copies identical). Everything that
+depends on the agent running in a lane lives in the EXECUTORS table; a lane's executor is read from the
+agent herdr reports in its worktree, else from the bookkeeping.
 
 Every subcommand prints exactly one JSON object and never raises.
 Exit code: 0 = done, 1 = refused or failed (see "error"), 2 = usage.
 
-  plan [<change> ...]           which changes can be dispatched, and under which names (read-only)
-  create <change>               worktree + lane branch; an uncommitted change becomes its first commit
-  launch <change> [--strict]    start codex in the lane's pane; report ready / dialog / exited
+  plan [<change> ...] [--executor E]   which changes can be dispatched, and under which names (read-only)
+  create <change> --executor E         worktree + lane branch; an uncommitted change becomes its first commit
+  launch <change> --executor E [--strict]
+                                start the executor in the lane's pane; report ready / dialog / exited
   prompt <change> --goal|--plain|--continue|--resume|--correct TEXT
                                 send one prompt, after checking identity and that no dialog is parked
   list [--table] [--no-remote]  overview of every lane, derived from git + herdr + openspec
@@ -35,14 +40,17 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 
 LANE_BRANCH_PREFIX = "change/"
 AGENT_NAME_MAX = 32
 START_TIMEOUT_MS = 120000
+SETTLE_S = 90
 MAX_PUBLISH_ATTEMPTS = 3
 
+# {skill} is how the executor names the OpenSpec apply skill (EXECUTORS[...]["skill"]).
 GOAL_TEXT = (
-    "Apply the OpenSpec change {c} by using $openspec-apply-change {c}. "
+    "Apply the OpenSpec change {c} by using {skill}. "
     "Work only inside this directory; never cd to another checkout and never touch files outside it. "
     "After completing each task: tick it in openspec/changes/{c}/tasks.md, then make one git commit "
     "(Conventional Commits) containing that task's files plus the tasks.md tick. "
@@ -53,7 +61,7 @@ GOAL_TEXT = (
     "You are done when every task is ticked and git status is clean."
 )
 CONTINUE_TEXT = (
-    "Continue applying the OpenSpec change {c} with $openspec-apply-change {c}: pick up at the first "
+    "Continue applying the OpenSpec change {c} with {skill}: pick up at the first "
     "unticked task in openspec/changes/{c}/tasks.md. Same rules as before: one commit per task, "
     "never push, never merge, never open a pull request."
 )
@@ -104,7 +112,8 @@ def fail(msg, **extra):
 
 
 def git(args, cwd, timeout=90):
-    return run(["git"] + args, cwd=cwd, timeout=timeout)
+    # A lane's files are read here, outside its sandbox: never let a repository config start a program.
+    return run(["git", "-c", "core.fsmonitor=false"] + args, cwd=cwd, timeout=timeout)
 
 
 def git_out(args, cwd):
@@ -246,7 +255,34 @@ def apply_status(cwd, change):
     }
 
 
-def goal_probe(session):
+def lane_commits(worktree):
+    """Commits on the lane that no non-lane branch has."""
+    refs = git_out(["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"], worktree).splitlines()
+    others = [r for r in refs if "/" + LANE_BRANCH_PREFIX not in r + "/" and not r.endswith("/HEAD")]
+    out = git_out(["rev-list", "--count", "HEAD", "--not"] + others, worktree)
+    return int(out) if out.isdigit() else 0
+
+
+def read_pane(target):
+    rc, out, _ = run(["herdr", "agent", "read", target, "--source", "visible"])
+    if rc != 0 or out.lstrip().startswith('{"error"'):
+        rc, out, _ = run(["herdr", "pane", "read", target, "--source", "visible"])
+    return out if rc == 0 else ""
+
+
+def pane_tail(text, n=24):
+    return "\n".join([ln.rstrip() for ln in text.splitlines() if ln.strip()][-n:])
+
+
+def first_line(cmd, cwd=None):
+    rc, out, _ = run(cmd, cwd=cwd, timeout=30)
+    lines = out.strip().splitlines() if rc == 0 else []
+    return lines[0] if lines else None
+
+
+# ---------- executors ----------
+
+def codex_goal_probe(session):
     """Authoritative codex goal state. <CODEX_HOME>/sqlite/goals_1.sqlite is an empty decoy; not used."""
     if not session:
         return {"probe": "unavailable", "reason": "no session id yet"}
@@ -268,22 +304,7 @@ def goal_probe(session):
     return {"probe": "ok", "goal_status": row[0], "tokens_used": row[1], "time_used_seconds": row[2]}
 
 
-def lane_commits(worktree):
-    """Commits on the lane that no non-lane branch has."""
-    refs = git_out(["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"], worktree).splitlines()
-    others = [r for r in refs if "/" + LANE_BRANCH_PREFIX not in r + "/" and not r.endswith("/HEAD")]
-    out = git_out(["rev-list", "--count", "HEAD", "--not"] + others, worktree)
-    return int(out) if out.isdigit() else 0
-
-
-def read_pane(target):
-    rc, out, _ = run(["herdr", "agent", "read", target, "--source", "visible"])
-    if rc != 0 or out.lstrip().startswith('{"error"'):
-        rc, out, _ = run(["herdr", "pane", "read", target, "--source", "visible"])
-    return out if rc == 0 else ""
-
-
-def pane_state(text):
+def codex_pane_state(text):
     """ready = composer visible and no parked list. Conservative: when unsure, not ready."""
     tail = [ln for ln in text.splitlines() if ln.strip()][-14:]
     parked = any(re.match(r"^\s*›\s*\d+\.\s", ln) for ln in tail)
@@ -299,8 +320,307 @@ def pane_state(text):
     return "exited" if shell else "unknown"
 
 
-def pane_tail(text, n=24):
-    return "\n".join([ln.rstrip() for ln in text.splitlines() if ln.strip()][-n:])
+def codex_launch_flags(strict, common_git_dir, policy_file):
+    flags = ["--no-alt-screen"]
+    # auto-review implies workspace-write and conflicts with --sandbox; strict must name the sandbox
+    # explicitly, because an untrusted directory defaults to read-only and then rejects --add-dir.
+    flags += (["--sandbox", "workspace-write", "--ask-for-approval", "on-request"] if strict
+              else ["--approve-for-me"])
+    return flags + ["--add-dir", common_git_dir]  # a linked worktree commits into the main repo's .git
+
+
+def codex_label():
+    return first_line(["codex", "--version"]) or "codex (version unknown)"
+
+
+PI_GOAL_EXTENSION = "pi-codex-goal@0.6.1"  # pinned: bumping it means re-running the probes in known-behaviors
+PI_GUARD_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "lane-guard")
+PI_PUBLIC_REGISTRIES = [
+    "npmjs.org", "*.npmjs.org", "registry.npmjs.org", "registry.yarnpkg.com",   # npm / yarn
+    "pypi.org", "*.pypi.org", "files.pythonhosted.org",                          # pip / uv
+    "github.com", "*.github.com", "api.github.com", "raw.githubusercontent.com", # git deps, release assets
+    "proxy.golang.org", "sum.golang.org",                                        # Go
+    "repo.maven.apache.org", "repo1.maven.org",                                  # Maven Central
+    "crates.io", "index.crates.io", "static.crates.io",                          # Cargo
+]
+PI_RULE = re.compile(r"^\s*─{8,}\s*$")
+PI_WORKING_RULE = re.compile(r"^\s*─+\s+\S+\s+Working\b")
+PI_STATS = re.compile(r"\d+(?:\.\d+)?%/\d+(?:\.\d+)?[KMG]?\b")
+
+
+def pi_goal_probe(session):
+    """pi-codex-goal keeps the goal in the session file herdr reports (agent_session kind "path"):
+    the last custom entry of that type carrying a status is the current state."""
+    if not session or not os.path.isfile(session):
+        return {"probe": "unavailable", "reason": "no session file yet"}
+    last = None
+    try:
+        with open(session, errors="replace") as fh:
+            for line in fh:
+                if '"pi-codex-goal"' not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(entry, dict) or entry.get("customType") != "pi-codex-goal":
+                    continue
+                data = entry.get("data") if isinstance(entry.get("data"), dict) else entry.get("details")
+                data = data if isinstance(data, dict) else {}
+                goal = data.get("goal") if isinstance(data.get("goal"), dict) else {}
+                status = data.get("status") or goal.get("status")
+                if isinstance(status, str) and status:
+                    usage = data.get("usage") or goal.get("usage")
+                    last = (status, usage if isinstance(usage, dict) else {})
+    except OSError as exc:
+        return {"probe": "unavailable", "reason": str(exc)}
+    if not last:
+        return {"probe": "unavailable", "reason": "no goal recorded in this session"}
+    status = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", last[0]).replace("-", "_").lower()
+    return {"probe": "ok", "goal_status": status, "tokens_used": last[1].get("tokensUsed"),
+            "time_used_seconds": last[1].get("activeSeconds")}
+
+
+def pi_layout(text):
+    """(top border, bottom border, stats line, lines) of pi's input box, or None when the TUI is not drawn."""
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()][-60:]
+    stats = max([i for i, ln in enumerate(lines) if PI_STATS.search(ln)] or [-1])
+    resumed = max([i for i, ln in enumerate(lines) if "To resume this session: pi" in ln] or [-1])
+    if stats < 0 or resumed > stats:
+        return None
+    bottom = max([i for i in range(stats) if PI_RULE.match(lines[i])] or [-1])
+    top = max([i for i in range(bottom) if PI_RULE.match(lines[i]) or PI_WORKING_RULE.match(lines[i])] or [-1])
+    if top < 0:
+        return None
+    return top, bottom, stats, lines
+
+
+def pi_input_box(text):
+    lay = pi_layout(text)
+    return "\n".join(lay[3][lay[0] + 1:lay[1]]).strip() if lay else None
+
+
+def pi_pane_state(text):
+    """working: the box's top border carries the spinner; ready: empty box; typed: text waiting in the box;
+    dialog: a selector (↑↓ navigate / enter select) is open; exited: pi printed its resume hint after the TUI."""
+    selector = re.compile(r"enter (select|confirm)|↑↓ navigate|\(y/n\)", re.I)
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    lay = pi_layout(text)
+    if lay is None:
+        if any(selector.search(ln) for ln in lines[-12:]):
+            return "dialog"  # e.g. the project-trust prompt, drawn before the TUI's footer exists
+        resumed = any("To resume this session: pi" in ln for ln in lines[-8:])
+        return "exited" if resumed else "unknown"
+    top, bottom, _, lines = lay
+    box = lines[top + 1:bottom]
+    if any(selector.search(ln) for ln in box + lines[bottom:]):
+        return "dialog"
+    if PI_WORKING_RULE.match(lines[top]):
+        return "working"
+    return "typed" if box else "ready"
+
+
+def pi_startup_problem(text):
+    """pi that lost the race for its config lock still starts, but with no model (known-behaviors P16)."""
+    lay = pi_layout(text)
+    if lay and re.search(r"\bunknown\s*$", lay[3][lay[2]]):
+        return "no_model"
+    if "No API key found" in text:
+        return "no_model"
+    return None
+
+
+SECOND_LEVEL = {"com", "net", "org", "edu", "gov", "ac", "co", "or", "ne", "go"}
+
+
+def registrable_domain(host):
+    """example.com for registry.example.com; example.com.cn for registry.example.com.cn. None for a bare suffix."""
+    parts = host.split(".")
+    n = 3 if len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in SECOND_LEVEL else 2
+    return ".".join(parts[-n:]) if len(parts) > n else None
+
+
+def url_host(url):
+    m = re.match(r"^(?:[a-z+]+://)?(?:[^@/]+@)?([^/:\s\"]+)", (url or "").strip())
+    host = m.group(1).lower() if m else ""
+    return host if "." in host and host != "0.0.0.0" else None
+
+
+def maven_settings():
+    try:
+        with open(os.path.expanduser("~/.m2/settings.xml"), errors="replace") as fh:
+            return re.sub(r"<!--.*?-->", "", fh.read(), flags=re.S)
+    except OSError:
+        return ""
+
+
+def cargo_home():
+    return os.environ.get("CARGO_HOME") or os.path.expanduser("~/.cargo")
+
+
+def registry_hosts(cwd):
+    """Registries and mirrors the user configured (npm, pip, Go, Maven, Cargo), so a lane installs from the
+    same places the user does. Read here, outside the sandbox; the lane cannot change them."""
+    hosts = []
+    npm = url_host(first_line(["npm", "config", "get", "registry"], cwd))
+    if npm:
+        # A mirror may serve tarballs from a sibling host (registry.npmmirror.com -> cdn.npmmirror.com).
+        site = registrable_domain(npm)
+        hosts += [npm] + (["*." + site] if site and site != npm else [])
+    for cmd in (["pip3", "config", "get", "global.index-url"], ["pip", "config", "get", "global.index-url"]):
+        hosts.append(url_host(first_line(cmd, cwd)))
+    rc, out, _ = run(["go", "env", "GOPROXY", "GOSUMDB"], cwd=cwd, timeout=30)
+    if rc == 0:
+        lines = out.splitlines() + ["", ""]
+        hosts += [url_host(p) for p in re.split(r"[,|]", lines[0]) if p.strip() not in ("direct", "off", "")]
+        sumdb = lines[1].split()
+        hosts.append(url_host(sumdb[-1]) if sumdb and sumdb[0] != "off" else None)
+    hosts += [url_host(u) for u in re.findall(r"<url>\s*([^<\s]+)\s*</url>", maven_settings())]
+    for name in ("config.toml", "config"):
+        try:
+            with open(os.path.join(cargo_home(), name), errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        hosts += [url_host(u.replace("sparse+", "", 1)) for u in re.findall(r'(?:registry|index)\s*=\s*"([^"]+)"', text)]
+    return [h for h in hosts if h]
+
+
+def pnpm_store(cwd):
+    """The user's pnpm store, as pnpm reports it outside the sandbox (inside, pnpm would pick one in the worktree)."""
+    store = first_line(["pnpm", "store", "path"], cwd)
+    if store and os.path.isabs(store):
+        # pnpm appends its store layout version to the configured store dir: .../pnpm/store/v11 -> .../pnpm/store
+        return os.path.dirname(store) if re.match(r"^v\d+$", os.path.basename(store)) else store
+    home = os.path.expanduser("~")
+    return store or (os.path.join(home, "Library", "pnpm", "store") if sys.platform == "darwin"
+                     else os.path.join(home, ".local", "share", "pnpm", "store"))
+
+
+def pi_cache_dirs(cwd, store):
+    """Package-manager caches a lane may write, so it can install dependencies (known-behaviors P18, P21).
+    Where the tool can say where its cache lives, ask it."""
+    home = os.path.expanduser("~")
+    dirs = [os.path.join(home, d) for d in (".npm", ".cache", os.path.join(".bun", "install", "cache"))]
+    if sys.platform == "darwin":
+        dirs.append(os.path.join(home, "Library", "Caches"))
+    dirs.append(store)
+    gopath = (first_line(["go", "env", "GOPATH"], cwd) or os.path.join(home, "go")).split(os.pathsep)[0]
+    dirs.append(os.path.join(gopath, "pkg"))  # module cache and checksum database
+    m = re.search(r"<localRepository>\s*([^<\s]+)\s*</localRepository>", maven_settings())
+    local_repo = m.group(1) if m else os.path.join(home, ".m2", "repository")
+    local_repo = re.sub(r"\$\{env\.([A-Za-z_][A-Za-z0-9_]*)\}", lambda e: os.environ.get(e.group(1), ""),
+                        local_repo.replace("${user.home}", home))
+    dirs.append(os.path.expanduser(local_repo))
+    dirs += [os.path.join(cargo_home(), "registry"), os.path.join(cargo_home(), "git")]
+    return dirs
+
+
+def pi_policy(root, change, worktree, common_git_dir, strict):
+    """Write the lane's sandbox policy outside the repository and return its path."""
+    if not os.path.isdir(os.path.join(PI_GUARD_DIR, "node_modules", "@anthropic-ai", "sandbox-runtime")):
+        fail("the pi lane-guard is not installed next to this script; run the pi setup sub-command",
+             lane_guard=PI_GUARD_DIR)
+    home = os.path.expanduser("~")
+    domains = []
+    for d in PI_PUBLIC_REGISTRIES + registry_hosts(worktree):
+        if d not in domains:
+            domains.append(d)
+    lane_dir = os.path.dirname(bookkeeping_path(root))
+    # The lane's own TMPDIR lives outside the worktree, which must stay clean.
+    tmp_dir = os.path.join(lane_dir, change + "-tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    store = pnpm_store(worktree)
+    caches = pi_cache_dirs(worktree, store)
+    admin = real(git_out(["rev-parse", "--path-format=absolute", "--git-dir"], worktree))
+    if not admin or real(admin) == real(common_git_dir):
+        fail("cannot find this lane's worktree admin directory", worktree=worktree)
+    policy = {
+        "version": 1,
+        "posture": "strict" if strict else "block",
+        "tmpDir": tmp_dir,
+        # Exported inside the sandbox before every command (known-behaviors P21).
+        "env": {"pnpm_config_store_dir": store, "npm_config_store_dir": store},
+        "allowWrite": [real(worktree), common_git_dir, tmp_dir] + [d for i, d in enumerate(caches) if d not in caches[:i]],
+        # The lane commits, but must never redirect git: the worktree's .git pointer and its admin files point
+        # git at a config; whoever rewrites them runs code in the next git command outside the sandbox.
+        "denyWrite": [os.path.join(common_git_dir, "hooks"), os.path.join(common_git_dir, "config"),
+                      os.path.join(real(worktree), ".git")]
+                     + [os.path.join(admin, f) for f in ("commondir", "gitdir", "config.worktree")],
+        "denyRead": [os.path.join(home, d) for d in (".ssh", ".aws", ".gnupg")],
+        "allowedDomains": domains,
+    }
+    path = os.path.join(lane_dir, change + "-policy.json")
+    with open(path, "w") as fh:
+        json.dump(policy, fh, indent=2)
+    return path
+
+
+def pi_launch_flags(strict, common_git_dir, policy_file):
+    # --approve trusts project resources for this run only; --no-mcp keeps MCP tools (outside the sandbox) out.
+    # Not --no-extensions: that would also drop herdr's own pi integration.
+    return ["-e", PI_GUARD_DIR, "-e", "npm:" + PI_GOAL_EXTENSION, "--approve", "--no-mcp",
+            "--tui-mode", "regular", "--lane-policy", policy_file]
+
+
+def pi_label():
+    return "pi {} + {}".format(first_line(["pi", "--version"]) or "(version unknown)", PI_GOAL_EXTENSION)
+
+
+EXECUTORS = {
+    "codex": {
+        "skill": "$openspec-apply-change {c}",
+        "goal_probe": codex_goal_probe,
+        "pane_state": codex_pane_state,
+        "launch_flags": codex_launch_flags,
+        "label": codex_label,
+        "default_posture": "auto-review",
+        # herdr reports a codex session only after the first turn ends, so a session proves the goal arrived.
+        "session_proves_primed": True,
+        "confirm_submit": False,
+        "status_hides_dialogs": False,
+        "input_box": None,
+        "launch_gap": 0,
+        "startup_problem": None,
+        "policy": None,
+    },
+    "pi": {
+        "skill": "the openspec-apply-change skill (read its SKILL.md first and follow it)",
+        "goal_probe": pi_goal_probe,
+        "pane_state": pi_pane_state,
+        "launch_flags": pi_launch_flags,
+        "label": pi_label,
+        "default_posture": "block",
+        # herdr reports a pi session (a file path) before any prompt, so a session proves nothing.
+        "session_proves_primed": False,
+        # A prompt typed right after startup can stay in the input box (known-behaviors P9).
+        "confirm_submit": True,
+        # herdr keeps reporting "working" while a pi selector waits for a human (known-behaviors P19).
+        "status_hides_dialogs": True,
+        "input_box": pi_input_box,
+        # Several pi starting together race for pi's own config lock (P14-P16).
+        "launch_gap": 4,
+        "startup_problem": pi_startup_problem,
+        "policy": pi_policy,
+    },
+}
+
+
+def executor_of_lane(worktree, book_lane):
+    mine = agents_in(herdr_agents(), worktree)
+    return lane_executor(mine[0] if len(mine) == 1 else None, book_lane)
+
+
+def lane_executor(agent, book_lane):
+    """The executor of a lane: the agent herdr reports in it, else the bookkeeping, else None (unknown)."""
+    if agent:
+        kind = agent.get("agent")
+        return kind if kind in EXECUTORS else None
+    if not book_lane:
+        return None
+    # A record from before executors were recorded can only be a codex lane.
+    rec = book_lane.get("executor", "codex")
+    return rec if rec in EXECUTORS else None
 
 
 # ---------- naming ----------
@@ -459,14 +779,17 @@ def find_review(root, route, branch, noted_url):
     return found
 
 
-def plan_one(root, change, pr_base, has_origin, taken_names, lanes):
+def plan_one(root, change, pr_base, has_origin, taken_names, lanes, executor_of=None):
     item = {"change": change, "eligible": False}
     rel = os.path.join("openspec", "changes", change)
+    lane = next((l for l in lanes if l["change"] == change), None)
+    if lane and executor_of:
+        item["lane_executor"] = executor_of(lane) or "unknown"
     if not os.path.isdir(os.path.join(root, rel)):
-        lane = next((l for l in lanes if l["change"] == change), None)
-        item["reason"] = "already has a lane; use the status sub-command" if lane else "no such change in the main checkout"
+        item["reason"] = ("already has a lane run by {}; use the status sub-command".format(item.get("lane_executor", "an agent"))
+                          if lane else "no such change in the main checkout")
         return item
-    if any(l["change"] == change for l in lanes) or os.path.exists(os.path.join(lanes_dir(root), change)):
+    if lane or os.path.exists(os.path.join(lanes_dir(root), change)):
         item["reason"] = ("a lane, or a directory left over from a failed create, already exists at {}. "
                           "A live lane is handled by the status sub-command; a leftover has to be removed by the "
                           "user (herdr worktree remove) before this change can be dispatched again").format(
@@ -519,8 +842,14 @@ def cmd_plan(args):
     agents = herdr_agents()
     taken = {a.get("name") for a in (agents or []) if a.get("name")}
     lanes = find_lanes(root)
-    items = [plan_one(root, c, pr_base, has_origin, taken, lanes) for c in changes]
-    emit({"ok": True, "repo": root, "pr_base": pr_base,
+    book = book_load(root).get("lanes", {})
+
+    def executor_of(lane):
+        mine = agents_in(agents, lane["worktree"])
+        return lane_executor(mine[0] if len(mine) == 1 else None, book.get(lane["change"]))
+
+    items = [plan_one(root, c, pr_base, has_origin, taken, lanes, executor_of) for c in changes]
+    emit({"ok": True, "repo": root, "pr_base": pr_base, "executor": args.executor,
           "herdr_reachable": agents is not None,
           "review": review_route(root, pr_base, not args.no_pr),
           "changes": items})
@@ -584,8 +913,8 @@ def cmd_create(args):
         propose_commit = git_out(["rev-parse", "--short", "HEAD"], wt)
 
     st = apply_status(wt, change) or {}
-    book_update(root, change, pr_base=pr_base, created_at=now())
-    emit({"ok": True, "change": change, "worktree": wt, "branch": branch, "agent_name": name,
+    book_update(root, change, pr_base=pr_base, created_at=now(), executor=args.executor)
+    emit({"ok": True, "change": change, "executor": args.executor, "worktree": wt, "branch": branch, "agent_name": name,
           "base_ref": item["base_ref"], "pr_base": pr_base,
           "workspace_id": (result.get("workspace") or {}).get("workspace_id"),
           "pane_id": (result.get("root_pane") or {}).get("pane_id"),
@@ -597,11 +926,40 @@ def cmd_create(args):
 
 # ---------- launch ----------
 
+def wait_gap(root, executor, field):
+    """Sleep until `launch_gap` seconds have passed since any lane of this executor last reached `field`."""
+    gap = EXECUTORS[executor]["launch_gap"]
+    if not gap:
+        return 0
+    lanes = book_load(root).get("lanes", {}).values()
+    last = max([l.get(field) or 0 for l in lanes if l.get("executor") == executor] or [0])
+    delay = last + gap - time.time()
+    if delay > 0:
+        time.sleep(delay)
+        return round(delay, 1)
+    return 0
+
+
+def stop_agent(name, pane):
+    """Quit an executor this launch just started and wait for the pane's shell to come back."""
+    run(["herdr", "agent", "prompt", name, "/quit"])
+    for _ in range(30):
+        if not any(a.get("pane_id") == pane for a in (herdr_agents() or [])):
+            return True
+        time.sleep(1)
+    return False
+
+
 def cmd_launch(args):
     root = main_root()
+    ex = EXECUTORS[args.executor]
     lane = find_lane(root, args.change)
     if not lane:
         fail("no lane for this change; run create first", change=args.change)
+    recorded = (book_load(root).get("lanes", {}).get(args.change) or {}).get("executor")
+    if recorded and recorded != args.executor:
+        fail("this lane was created for {}; it cannot be launched with {}".format(recorded, args.executor),
+             change=args.change)
     agents = herdr_agents()
     if agents is None:
         fail("herdr is not reachable")
@@ -610,27 +968,76 @@ def cmd_launch(args):
     ws, pane = lane_pane(root, lane["worktree"])
     if not pane:
         fail("cannot find the herdr pane for this lane", change=args.change, workspace_id=ws)
-    name = sanitize_agent_name(args.change, {a.get("name") for a in agents if a.get("name")})
     common = real(git_out(["rev-parse", "--path-format=absolute", "--git-common-dir"], root))
-    posture = "strict" if args.strict else "auto-review"
-    flags = ["--no-alt-screen"]
-    # auto-review implies workspace-write and conflicts with --sandbox; strict must name the sandbox
-    # explicitly, because an untrusted directory defaults to read-only and then rejects --add-dir.
-    flags += (["--sandbox", "workspace-write", "--ask-for-approval", "on-request"] if args.strict
-              else ["--approve-for-me"])
-    flags += ["--add-dir", common]  # a linked worktree commits into the main repo's .git
-    rc, data = jrun(["herdr", "agent", "start", name, "--kind", "codex", "--pane", pane,
-                     "--timeout", str(START_TIMEOUT_MS), "--"] + flags, timeout=START_TIMEOUT_MS // 1000 + 30)
-    err = ((data or {}).get("error") or {}).get("code")
-    text = read_pane(name) or read_pane(pane)
-    state = pane_state(text)
-    book_update(root, args.change, posture=posture, agent_name=name)
-    emit({"ok": state in ("ready", "dialog"), "change": args.change, "agent_name": name, "pane_id": pane,
+    posture = "strict" if args.strict else ex["default_posture"]
+    policy_file = ex["policy"](root, args.change, lane["worktree"], common, args.strict) if ex["policy"] else None
+    flags = ex["launch_flags"](args.strict, common, policy_file)
+    waited = wait_gap(root, args.executor, "ready_epoch")
+
+    def start():
+        taken = {a.get("name") for a in (herdr_agents() or []) if a.get("name")}
+        name = sanitize_agent_name(args.change, taken)
+        rc, data = jrun(["herdr", "agent", "start", name, "--kind", args.executor, "--pane", pane,
+                         "--timeout", str(START_TIMEOUT_MS), "--"] + flags, timeout=START_TIMEOUT_MS // 1000 + 30)
+        # herdr can report readiness before the TUI is drawn (an extension still being fetched, say).
+        deadline = time.time() + SETTLE_S
+        while True:
+            text = read_pane(name) or read_pane(pane)
+            state = ex["pane_state"](text)
+            if state != "unknown" or time.time() > deadline:
+                return name, ((data or {}).get("error") or {}).get("code"), text, state
+            time.sleep(1)
+
+    name, err, text, state = start()
+    problem = ex["startup_problem"](text) if ex["startup_problem"] and state == "ready" else None
+    retried = None
+    # An executor that lost the race for its own config lock comes up without a model: stop it, start it
+    # once more after the gap, and never send a goal to the first one.
+    if problem:
+        retried = problem
+        if not stop_agent(name, pane):
+            fail("the first {} came up without a model and did not stop; nothing else was started".format(
+                args.executor), change=args.change, agent_name=name, pane_tail=pane_tail(read_pane(pane)))
+        time.sleep(ex["launch_gap"])
+        name, err, text, state = start()
+        problem = ex["startup_problem"](text) if state == "ready" else None
+    up = state in ("ready", "dialog") and not problem
+    book_update(root, args.change, executor=args.executor, posture=posture, agent_name=name,
+                ready_epoch=time.time() if up else None)
+    emit({"ok": up, "change": args.change, "executor": args.executor, "agent_name": name, "pane_id": pane,
           "workspace_id": ws, "posture": posture, "start_result": err or "started", "state": state,
-          "pane_tail": pane_tail(text)}, 0 if state in ("ready", "dialog") else 1)
+          "startup_problem": problem, "retried": retried, "waited_s": waited, "policy_file": policy_file,
+          "pane_tail": pane_tail(text)}, 0 if up else 1)
 
 
 # ---------- prompt ----------
+
+def wait_working(target, ms=15000):
+    rc, data = jrun(["herdr", "agent", "wait", target, "--until", "working", "--timeout", str(ms)],
+                    timeout=ms // 1000 + 15)
+    return rc == 0 and (((data or {}).get("result") or {}).get("agent") or {}).get("agent_status") == "working"
+
+
+def compact(text):
+    return re.sub(r"\s+", "", text or "")
+
+
+def confirm_submitted(target, ex, message):
+    """Whether the typed prompt actually left the input box. Presses enter once when the box still holds this
+    very message, and only then: anything else in the box (a dialog, say) must never receive an enter."""
+    if wait_working(target):
+        return "working"
+    text = read_pane(target)
+    state = ex["pane_state"](text)
+    if state != "typed":
+        return "left_input_box" if state in ("ready", "working") else "unclear:" + state
+    if compact(message)[:40] not in compact(ex["input_box"](text)):
+        return "unclear:box_holds_other_text"
+    rc, _, _ = run(["herdr", "agent", "send-keys", target, "enter"])
+    if rc == 0 and (wait_working(target) or ex["pane_state"](read_pane(target)) != "typed"):
+        return "enter_pressed"
+    return "still_in_input_box"
+
 
 def cmd_prompt(args):
     root = main_root()
@@ -642,38 +1049,48 @@ def cmd_prompt(args):
         fail("expected exactly one agent in this lane, found {}; nothing was sent".format(len(mine)),
              change=args.change)
     agent = mine[0]
+    c = args.change
+    executor = lane_executor(agent, book_load(root).get("lanes", {}).get(c))
+    if not executor:
+        fail("the agent in this lane is not a known executor ({}); nothing was sent".format(agent.get("agent")),
+             change=c)
+    ex = EXECUTORS[executor]
     target = agent_ref(agent)
     session = (agent.get("agent_session") or {}).get("value")
     # Never type into a turn that is in flight: codex drops slash commands mid-turn and queues plain text.
     if agent.get("agent_status") == "working":
-        fail("the lane is working; nothing was sent", change=args.change)
+        fail("the lane is working; nothing was sent", change=c)
     text = read_pane(target)
-    state = pane_state(text)
+    state = ex["pane_state"](text)
     if state != "ready":
         fail("the pane is not at an idle composer (state: {}); nothing was sent".format(state),
-             change=args.change, pane_tail=pane_tail(text))
+             change=c, pane_tail=pane_tail(text))
 
-    c = args.change
+    skill = ex["skill"].format(c=c)
+    waited = 0
     if args.goal or args.plain:
-        # herdr reports no session until the first turn ends, so the session alone cannot prove
-        # "not primed yet"; the bookkeeping mark covers that window.
+        # The bookkeeping mark covers the window before any other evidence exists. Whether a session alone
+        # proves the goal arrived depends on when herdr starts reporting it for this executor.
         primed = book_load(root).get("lanes", {}).get(c, {}).get("goal_sent_at")
-        if primed or session or goal_probe(session).get("probe") == "ok" or lane_commits(lane["worktree"]) > 1:
+        if (primed or (ex["session_proves_primed"] and session) or ex["goal_probe"](session).get("probe") == "ok"
+                or lane_commits(lane["worktree"]) > 1):
             fail("this lane already received its goal; a goal is sent once", change=c, session=session,
                  goal_sent_at=primed)
-        body = GOAL_TEXT.format(c=c)
+        body = GOAL_TEXT.format(c=c, skill=skill)
         message = ("/goal " + body) if args.goal else body
+        waited = wait_gap(root, executor, "goal_epoch")
     elif args.resume:
         message = "/goal resume"
     elif args.correct:
         message = CORRECT_TEXT.format(c=c, detail=args.correct.strip())
     else:
-        message = CONTINUE_TEXT.format(c=c)
+        message = CONTINUE_TEXT.format(c=c, skill=skill)
 
     rc, data = jrun(["herdr", "agent", "prompt", target, message])
     if args.goal or args.plain:
         # Marked even when the call errors: an interrupted prompt call has usually delivered its text.
-        book_update(root, c, goal_sent_at=now(), goal_mode="goal" if args.goal else "plain")
+        book_update(root, c, goal_sent_at=now(), goal_epoch=time.time(), goal_mode="goal" if args.goal else "plain")
+    submitted = confirm_submitted(target, ex, message) if ex["confirm_submit"] else None
     if args.cont:
         st = apply_status(lane["worktree"], c) or {}
         nudges = book_load(root).get("lanes", {}).get(c, {}).get("nudges", [])
@@ -681,11 +1098,15 @@ def cmd_prompt(args):
                        "complete": (st.get("progress") or {}).get("complete")})
         book_update(root, c, nudges=nudges)
     after = agents_in(herdr_agents(), lane["worktree"])
-    emit({"ok": rc == 0, "change": c, "sent": message.split(" ", 1)[0] if message.startswith("/") else "prompt",
-          "herdr": ((data or {}).get("error") or {}).get("code"),
+    # still_in_input_box / unclear:*: the lane did not visibly take the prompt; the orchestrator looks at the pane.
+    ok = rc == 0 and submitted in (None, "working", "left_input_box", "enter_pressed")
+    emit({"ok": ok, "change": c, "executor": executor,
+          "sent": message.split(" ", 1)[0] if message.startswith("/") else "prompt",
+          "herdr": ((data or {}).get("error") or {}).get("code"), "submitted": submitted, "waited_s": waited,
           "agent_status": after[0].get("agent_status") if after else None,
           "session": ((after[0].get("agent_session") or {}).get("value") if after else None),
-          "note": "delivery is judged from the lane on the next list, not from this call"}, 0 if rc == 0 else 1)
+          "pane_tail": pane_tail(read_pane(target)) if not ok else None,
+          "note": "delivery is judged from the lane on the next list, not from this call"}, 0 if ok else 1)
 
 
 # ---------- list ----------
@@ -717,15 +1138,18 @@ def lane_overview(root, lane, agents, book, remote_heads, route):
     agent = mine[0] if len(mine) == 1 else None
     session = (agent or {}).get("agent_session", {}) or {}
     session = session.get("value") or (book.get(c) or {}).get("session")
+    executor = lane_executor(agent, book.get(c)) if len(mine) <= 1 else None
     st = apply_status(wt, c) or {}
     prog = st.get("progress") or {}
     info.update(
-        agents_in_lane=len(mine),
+        executor=executor, agents_in_lane=len(mine),
         agent=({"ref": agent_ref(agent), "status": agent.get("agent_status"), "pane_id": agent.get("pane_id"),
                 "workspace_id": agent.get("workspace_id")} if agent else None),
         session=session, state=st.get("state"), complete=prog.get("complete"), total=prog.get("total"),
         commits=lane_commits(wt), tree_clean=not git_out(["status", "--porcelain"], wt),
-        goal=goal_probe(session), book=book.get(c) or {})
+        goal=(EXECUTORS[executor]["goal_probe"](session) if executor
+              else {"probe": "unavailable", "reason": "unknown executor"}),
+        book=book.get(c) or {})
     rec = verify_record(wt, c)
     info["verified"] = verification_current(wt, c, rec)
     info["on_origin"] = None if remote_heads is None else lane["branch"] in remote_heads
@@ -745,6 +1169,10 @@ def lane_overview(root, lane, agents, book, remote_heads, route):
     info["nudges_without_progress"] = stale
 
     status = (agent or {}).get("agent_status")
+    if agent and executor and EXECUTORS[executor]["status_hides_dialogs"] and status != "blocked":
+        if EXECUTORS[executor]["pane_state"](read_pane(agent_ref(agent))) == "dialog":
+            status = "blocked"
+            info["agent"]["status"] = "blocked (dialog in pane)"
     goal = info["goal"].get("goal_status")
     done = st.get("state") == "all_done" and info["tree_clean"]
     if agents is None:
@@ -759,6 +1187,8 @@ def lane_overview(root, lane, agents, book, remote_heads, route):
         verdict = "lane_pushed_itself"
     elif info["verified"]:
         verdict = "verified_unpublished"
+    elif not executor:
+        verdict = "unknown_executor"  # rules for reading this lane are unknown: report it, never steer it
     elif not mine:
         verdict = "no_agent"
     elif status == "blocked":
@@ -791,16 +1221,17 @@ def cmd_list(args):
         base = next((b.get("pr_base") for b in book.values() if b.get("pr_base")), None)
         route = review_route(root, base or git_out(["branch", "--show-current"], root))
     rows = [lane_overview(root, l, agents, book, remote_heads, route) for l in lanes]
-    settled = {"published", "awaiting_user", "lane_pushed_itself", "ambiguous_agent", "no_agent"}
+    settled = {"published", "awaiting_user", "lane_pushed_itself", "ambiguous_agent", "no_agent", "unknown_executor"}
     if args.table:
-        print("{:<28} {:<20} {:<8} {:>5}  {:>7}  {:<5}  {}".format("CHANGE", "VERDICT", "AGENT", "N/M", "COMMITS", "TREE", "REVIEW"))
+        print("{:<28} {:<6} {:<20} {:<8} {:>5}  {:>7}  {:<5}  {}".format(
+            "CHANGE", "EXEC", "VERDICT", "AGENT", "N/M", "COMMITS", "TREE", "REVIEW"))
         for r in rows:
             rv = r["review"]
             label = "-"
             if rv:
                 label = ("#{} ".format(rv["id"]) if rv.get("id") else "") + ("draft" if rv.get("draft") else rv.get("state") or "")
-            print("{:<28} {:<20} {:<8} {:>5}  {:>7}  {:<5}  {}".format(
-                r["change"][:28], r["verdict"], (r["agent"] or {}).get("status") or "-",
+            print("{:<28} {:<6} {:<20} {:<8} {:>5}  {:>7}  {:<5}  {}".format(
+                r["change"][:28], r["executor"] or "?", r["verdict"], (r["agent"] or {}).get("status") or "-",
                 "{}/{}".format(r["complete"], r["total"]), r["commits"], "clean" if r["tree_clean"] else "dirty",
                 label.strip() or "-"))
         sys.exit(0)
@@ -853,11 +1284,11 @@ def cmd_record_verify(args):
 
     head = git_out(["rev-parse", "HEAD"], wt)
     book = book_load(root).get("lanes", {}).get(c, {})
-    codex_version = run(["codex", "--version"])[1].strip().splitlines()[0:1]
+    executor = executor_of_lane(wt, book)
     lines = ["# Verification", "",
              "verified_commit: " + head,
              "verified_at: " + now(),
-             "executor: " + (codex_version[0] if codex_version else "codex (version unknown)"),
+             "executor: " + (EXECUTORS[executor]["label"]() if executor else "unknown (no agent and no record)"),
              "approval_posture: " + book.get("posture", "unknown"),
              "verified_by: orchestrator (re-ran every check below inside the lane worktree)", "",
              "## Checks", "", "| Task | Check | Result | Evidence |", "|---|---|---|---|"]
@@ -928,8 +1359,9 @@ def cmd_publish(args):
         body_file = os.path.join(os.path.dirname(bookkeeping_path(root)), c + "-review.md")
         os.makedirs(os.path.dirname(body_file), exist_ok=True)
         with open(body_file, "w") as fh, open(os.path.join(wt, "openspec", "changes", c, "verify.md")) as src:
-            fh.write("Applies the OpenSpec change `{}`. Written by codex in an isolated lane; "
-                     "verified independently by the orchestrator before publishing.\n\n".format(c) + src.read())
+            fh.write("Applies the OpenSpec change `{}`. Written by {} in an isolated lane; "
+                     "verified independently by the orchestrator before publishing.\n\n".format(
+                         c, executor_of_lane(wt, book) or "an unrecorded executor") + src.read())
     handoff = {"remote_url": route.get("remote_url"), "host": route.get("host"), "source_branch": branch,
                "target_branch": base, "title": args.title, "body_file": body_file, "draft": not args.ready,
                "tool": route.get("tool")}
@@ -993,9 +1425,12 @@ def cmd_forge(args):
 def main():
     ap = argparse.ArgumentParser(prog="lane.py", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd")
+    executors = sorted(EXECUTORS)
     p = sub.add_parser("plan"); p.add_argument("changes", nargs="*"); p.add_argument("--no-pr", action="store_true")
-    p = sub.add_parser("create"); p.add_argument("change")
+    p.add_argument("--executor", choices=executors)
+    p = sub.add_parser("create"); p.add_argument("change"); p.add_argument("--executor", choices=executors, required=True)
     p = sub.add_parser("launch"); p.add_argument("change"); p.add_argument("--strict", action="store_true")
+    p.add_argument("--executor", choices=executors, required=True)
     p = sub.add_parser("prompt"); p.add_argument("change")
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--goal", action="store_true"); g.add_argument("--plain", action="store_true")

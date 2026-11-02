@@ -1,0 +1,51 @@
+# Tasks
+
+> 顺序即依赖。1–4 不花模型费用；5 在 `/tmp` 一次性仓库 + herdr 里真跑（pi 用本机默认模型，codex 用本机账号）。所有改动在 feature 分支上。
+
+## 0. 前置
+
+- [x] 0.1 从 main 拉 `feat/dispatch-pi` 分支，把本 change 目录作为首个 commit（`docs(openspec): propose dispatch-pi`）；验证：`git branch --show-current` 为 `feat/dispatch-pi`，`openspec validate dispatch-pi --strict` 通过
+
+## 1. 引擎改为执行者无关（spec `dispatch-executors`；codex 行为不变）
+
+- [x] 1.1 在 `dispatch/codex/scripts/lane.py` 引入 `EXECUTORS` 适配表（design D1），把 codex 的 launch 参数、goal / continue / correct / resume 文本、`goal_probe`、`pane_state`、"已下达 goal"的证据、版本命令、verify / 评审出处文案搬进 `codex` 一行，其余代码只经表访问；验证：`python3 -m py_compile` 通过，`grep -n '"codex"\|codex' lane.py` 的命中只在适配表、docstring 与注释里；对同一 lane 构造的 codex `herdr agent start` argv 与改动前逐项相同
+- [x] 1.2 执行者成为 lane 属性（design D2）：`plan` / `create` / `launch` 接受 `--executor codex|pi`，`launch` 写入 bookkeeping；`list` 按 herdr agent 类型 → bookkeeping → `unknown` 推出执行者，`unknown` 的 lane verdict 不进入任何会发送输入的分支；`list --table` 增加执行者列；`plan` 对已有 lane 的 change 返回该 lane 的执行者；验证：临时仓库里 `create --executor pi` 一条 lane 不启动 agent，`list` 显示 `pi` / `no_agent`（`create` 即记下执行者，否则刚建好的 lane 无法走 `no_agent → launch`）；删掉该字段后显示 `unknown_executor`；旧格式 bookkeeping（无该字段）下 herdr 报 codex 的 lane 显示 `codex`
+- [x] 1.3 `record-verify` 的 `executor:` 行与 `publish` 正文出处行取自该 lane 的执行者（design D8）；验证：对 pi lane 生成的 `verify.md` 与评审正文文件里，除扩展名 `pi-codex-goal` 外 grep 不到 `codex`，含 pi 与 pi-codex-goal 的版本
+- [x] 1.4 `doctor.sh` 增加 `--executor codex|pi`（design D7），codex 分支输出与改动前字段一致；pi 分支检测 pi、node ≥ 24、rg、skill 目录内 sandbox-runtime 版本、`pi auth check --no-refresh`（不带 `--credentials`）、Linux 的 bwrap / socat、目标仓库已提交的 `.pi/skills` 或 `.agents/skills` 里的 apply skill；验证：本机 `--executor codex` 的 JSON 与改动前 diff 只多 `executor` 字段；`--executor pi` 在未装 sandbox 依赖时 `required_tools` 里该项 `ok:false`，不报 codex 缺失
+- [x] 1.5 新增 `dispatch/sync-engine.sh`：以 `dispatch/codex/scripts/{lane.py,doctor.sh}` 为源复制到 `dispatch/pi/scripts/`，`--check` 比对、不同则非零退出并列出文件；验证：复制后 `--check` 退出 0；改 pi 副本一个字节后 `--check` 退出非 0 并点名 `lane.py`
+
+## 2. pi 适配行（spec `dispatch-executors`、`dispatch-lane-launch`、`dispatch-supervision`）
+
+- [x] 2.1 pi 的 launch（design D3）：参数 `-e <skill>/scripts/lane-guard -e npm:pi-codex-goal@0.6.1 --approve --no-mcp --tui-mode regular --lane-policy <file>`；`launch` 先生成策略文件到 `~/.claude/dispatch/<repo-id>/<change>-policy.json`（allowWrite = worktree + git common dir + `~/.npm` / `~/.cache` / macOS 的 `~/Library/Caches`，denyWrite = 其下 `hooks` / `config`，denyRead = `~/.ssh` / `~/.aws` / `~/.gnupg`，allowedDomains = 公共源 + `npm config get registry` / `pip config get global.index-url` 的 host，posture）；验证：临时仓库里对一条 lane 运行 `launch --executor pi`，策略文件内容与上述一致且路径已做 realpath，pane 底栏出现 lane-guard 的就绪提示
+- [x] 2.2 pi 的 `goal_probe`（design D5）：从 herdr 报的 session 路径倒序取最后一条 `customType == "pi-codex-goal"` 且带 `status` 的记录，连字符规范为下划线；文件不存在或无记录时返回 `unavailable`；验证：用实测形态构造的 JSONL 样例（只有 `usage/active`；末条 `set/complete`；含 `budget-limited`；空文件）分别得到 `active` / `complete` / `budget_limited` / `unavailable`
+- [x] 2.3 pi 的 `pane_state`（design D6、P7）：`Working` 分隔行 → `working`；`To resume this session` 或无 pi 底栏的 shell → `exited`；空输入框 + 底栏 → `ready`；其余 → `unknown`；changelog 与 Update Available 横幅不影响判断；验证：用实测抓到的四段 pane 文本（启动就绪含 changelog、工作中、goal 完成空闲、退出后）做样例，分类结果正确
+- [x] 2.4 pi 的"已下达 goal"证据与提交确认（design D5、D6）：pi 不以 session 存在为证据；`launch` 后等到 `ready` 才允许 `prompt`；`prompt` 后约 15 秒内未进入 `working` 且输入框仍是所发文字 → `send-keys enter` 一次，仍不动则 `ok:false` 附 pane 尾部；`done` 与 `idle` 都视为不在工作；验证：临时仓库里对刚启动的 pi lane 立即 `prompt --goal`，lane 进入工作且 session 里只有一条 goal `set` 记录；对已下达 goal 的 lane 再发 `--goal` 被拒
+- [x] 2.5 pi 的启动间隔与"无模型"重启（design D9、P16）：适配表加 `launch_gap`（pi 4 秒、codex 0）；`launch` 拿到 `ready` 后若底栏模型为 `unknown` 或 pane 出现 `No API key found`，则 `/quit`、隔 `launch_gap` 重启一次并在结果里带 `retried: "no_model"`，仍无模型则 `ok:false`；退出类失败不重试；`SKILL.md` 的派发步骤写明 pi lane 逐个 launch、goal 之间同样间隔；验证：用 P16 实测的无模型 pane 文本与正常就绪的 pane 文本做样例，前者判为无模型、后者不是；5.5 里真跑一次
+
+## 3. lane-guard 扩展（spec `dispatch-executors` 沙箱 / 文件工具 / MCP / 不改用户配置）
+
+- [x] 3.1 `dispatch/pi/scripts/lane-guard/package.json` 钉死 `@anthropic-ai/sandbox-runtime@0.0.26`、`pi.extensions` 指向 `index.ts`；`index.ts` 注册 `--lane-policy`，只从该文件读策略，替换 `bash` 并接管 `user_bash`，策略缺失 / 解析失败 / 初始化失败时 bash 一律返回错误（fail closed）；验证：`PI_OFFLINE=1 pi --no-extensions -e <dir> --help` 退出 0 且帮助里有 `--lane-policy`；`npm install` 后 `node_modules/` 不进 git（`git status` 干净）
+- [x] 3.2 同一扩展里的 `tool_call` 守卫：`write` / `edit` 目标先 realpath 最近的已存在祖先再比对，可写根与 `denyWrite` 与沙箱同源；默认姿态 `block` 带原因，`posture: strict` 时用 `ctx.ui.confirm` 询问；验证：在 5.2 的真跑里一并验收（本任务完成标志为代码与 3.1 的加载检查通过）
+
+## 4. skill、文档与注册
+
+- [x] 4.1 新建 `dispatch/pi/SKILL.md`：结构对齐 `dispatch/codex/SKILL.md`，入口 `/dispatch:pi`，所有脚本调用带 `--executor pi`，姿态句、启动期处理、goal 下达、技术事实按 pi 写，写明 `status` 覆盖全部 lane；codex 的 SKILL.md 补"巡检覆盖两种执行者、执行者列"；验证：`python3 skill-craft/scripts/check.py dispatch/pi` 与 `dispatch/codex` 无 error
+- [x] 4.2 `dispatch/pi/references/setup.md`：安装 pi、Node ≥ 24、ripgrep、Linux 的 bwrap / socat，征得同意后在 skill 目录 `npm install`，pi 登录由用户自己做，`openspec init --tools pi` 并提交；验证：按文档在本机逐项执行 `/dispatch:pi setup` 的检测，每个缺失项都给出文档里的那条命令
+- [x] 4.3 `dispatch/pi/references/known-behaviors.md`：design 的 P1–P15 逐条带日期与版本；未验证项单列（`paused` / `blocked` / `waiting` / `budget_limited` 的真实出现、`--strict` 确认框样子、`--offline` 行为、长任务 compaction）；验证：每条已验证事实都有日期与版本号
+- [x] 4.4 `.claude-plugin/marketplace.json` 的 `dispatch` 插件 `skills` 加 `./dispatch/pi` 并更新描述；`dispatch/README.md`（执行者两种、前置条件按执行者、pi 姿态、`sync-engine.sh`）；仓库 `CLAUDE.md` 增加 `dispatch:pi` 一节与"改引擎后跑 `sync-engine.sh`"的开发规范；`CHANGELOG.md`；`dispatch/codex` 版本 0.2.0、`dispatch/pi` 0.1.0；验证：`jq . .claude-plugin/marketplace.json` 解析通过，`dispatch/sync-engine.sh --check` 退出 0
+
+## 5. 真跑验收（`/tmp` 一次性仓库 + herdr）
+
+- [x] 5.1 pi 端到端：一个 2 task 的 change 按 `/dispatch:pi` 的流程走 `plan → create → launch → prompt --goal → list`，直到 `claims_done`，再 `record-verify` 与 `publish --no-pr`；验证：每 task 一个 commit，`list` 显示执行者 `pi`、goal `complete`，`verify.md` 的 executor 行为 pi，用户的 `~/.pi/agent/settings.json` 与 `trust.json` 前后一致
+- [x] 5.2 pi lane 的边界探针：在 lane 里让 pi 依次做 worktree 内 commit、bash 写主 checkout、bash 写 `.git/hooks`、`write` 写主 checkout、`edit` 改 `.git/config`、经 `/tmp` 别名写 worktree、curl 未放行域名、npm 源可达、`npm install` 一个小包；再把策略文件改坏重启 lane 让 pi 跑任意 bash；验证：commit / 别名写入 / npm 源 / `npm install` 成功，其余全部被拒且无文件变化，改坏策略后 bash 被拒并给出原因
+- [x] 5.3 `--strict` 的 pi lane：诱发一次越界 `write`，抓取确认框的 pane 文本，据此补 `pane_state` 的 `dialog` 规则并写进 known-behaviors；验证：补规则后 `list` 对该 lane 给出 `blocked`，lane 在人工拒绝后继续工作
+- [x] 5.4 混跑：同一临时仓库一条 codex lane、一条 pi lane 同时跑完；验证：分别从 `dispatch/codex/scripts/lane.py` 与 `dispatch/pi/scripts/lane.py` 执行 `list`，两份输出逐字相同；codex lane 的 verdict 序列与改动前一致（goal 走到 `complete`、`claims_done`）
+- [x] 5.5 无模型重启与并发派发：在临时仓库里对一条 lane 用临时 `PI_CODING_AGENT_DIR`（空 `auth.json`，不复制凭据）模拟"无模型"启动，确认 `launch` 先重启一次、再以 `ok:false` 报无模型且未发 goal；再在真实配置下一次派发 4 条 pi lane；验证：4 条 lane 全部到 `ready`、各自完成 goal，`list` 中无 `no_agent`，相邻两次 launch 的就绪时间间隔不少于 4 秒
+- [x] 5.6 清理：先 `herdr worktree remove --force`（或关闭 workspace）再删临时目录，删对应的 pi session；验证：`herdr workspace list` 无实验 workspace，`/tmp` 无实验目录
+
+## 6. 更多包管理器（spec `dispatch-executors` 沙箱；design D4、P21）
+
+- [x] 6.1 `lane.py` 的 pi 策略：按 design D4 列出各生态的可写缓存（工具存在时用其自报路径）、创建并放行 lane 私有临时目录（策略字段 `tmpDir`）、白名单并入 npm（含同注册域名 `*.`）/ pip / Go / Maven / Cargo 的用户配置源与公共源；验证：在本机生成的策略里能看到 `~/Library/pnpm/store`、`~/go/pkg`、`~/.m2/repository`、`~/.cargo/registry`、`goproxy.cn`、`*.npmmirror.com`、`maven.aliyun.com`、`index.crates.io`，`tmpDir` 目录存在
+- [x] 6.2 lane-guard 在每条沙箱命令前设置 `TMPDIR`、`NODE_USE_ENV_PROXY`、`JAVA_TOOL_OPTIONS`，生成 Maven 代理 settings 并导出 `mvn` 函数与 `MAVEN_ARGS`；验证：`PI_OFFLINE=1 pi --no-extensions -e <lane-guard> --help` 仍能加载
+- [x] 6.3 真跑：在一条 pi lane 里用 pi 的 `!` 命令（走 lane-guard 的沙箱、不调模型）逐个用 pip（venv）、uv、npm、pnpm、bun、Go、Maven、Cargo 装一个本机缓存里没有的依赖；验证：八项都成功，`git status` 里只有各自的探针子目录，`known-behaviors.md` 记下结果与未覆盖项（Gradle、yarn 未测）
+

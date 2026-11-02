@@ -17,11 +17,11 @@ A change SHALL be dispatched only when OpenSpec reports that every artifact requ
 - **THEN** the change SHALL NOT be dispatched
 
 #### Scenario: No change named
-- **WHEN** `/dispatch:codex` is invoked with no change name
+- **WHEN** `/dispatch:codex` or `/dispatch:pi` is invoked with no change name
 - **THEN** the skill SHALL list the eligible changes and ask the user to choose
 
 ### Requirement: One lane per change
-Each dispatched change SHALL get exactly one lane, consisting of one git worktree, one branch and one codex agent. The dispatcher SHALL NOT split a single change across lanes and SHALL NOT create a second lane for a change that already has one.
+Each dispatched change SHALL get exactly one lane, consisting of one git worktree, one branch and one agent of the executor selected by the entry command. The dispatcher SHALL NOT split a single change across lanes and SHALL NOT create a second lane for a change that already has one, whichever executor that lane runs.
 
 #### Scenario: Several changes named
 - **WHEN** three eligible changes are named in one invocation
@@ -30,6 +30,10 @@ Each dispatched change SHALL get exactly one lane, consisting of one git worktre
 #### Scenario: Change already has a lane
 - **WHEN** a worktree for the named change already exists
 - **THEN** the dispatcher SHALL NOT create another lane and SHALL point the user to the status sub-command
+
+#### Scenario: Change already has a lane run by the other executor
+- **WHEN** `/dispatch:pi` names a change that already has a codex lane
+- **THEN** the dispatcher SHALL NOT create another lane and SHALL tell the user which executor runs the existing lane
 
 ### Requirement: Dispatch runs from the main checkout
 A dispatch SHALL run only from the main checkout of a git repository. It SHALL stop when the current directory is not in a git repository or is a linked worktree.
@@ -61,22 +65,22 @@ The dispatcher SHALL NOT commit to the base branch and SHALL NOT push it. The ch
 - **THEN** that lane SHALL NOT be created and the user SHALL be asked to commit or discard the modifications first
 
 ### Requirement: Approval posture defaults to automatic review and never bypasses the sandbox
-By default a lane SHALL run with codex's automatic approval review inside a workspace-write sandbox. With `--strict`, a lane SHALL run in an explicitly selected workspace-write sandbox with approvals requested from a human. In both postures the lane SHALL be able to commit to its branch. The dispatcher SHALL NOT launch a lane with approvals and sandbox bypassed.
+Every lane SHALL run inside a sandbox that confines writes to the lane and still lets it commit to its branch, and the dispatcher SHALL NOT launch a lane with approvals and sandbox bypassed. For codex, the default posture SHALL be codex's automatic approval review inside a workspace-write sandbox, and `--strict` SHALL select the workspace-write sandbox explicitly with approvals requested from a human. For pi, the default posture SHALL block out-of-bounds operations and return the reason to the model, and `--strict` SHALL send out-of-bounds file writes to a human for approval; in both pi postures shell commands SHALL stay inside the operating-system sandbox. The confirmation SHALL name the posture in the terms of the selected executor.
 
 #### Scenario: Default posture
 - **WHEN** no posture flag is given
-- **THEN** the lane SHALL start under automatic approval review, and the confirmation SHALL have named that posture
+- **THEN** a codex lane SHALL start under automatic approval review, a pi lane SHALL start with out-of-bounds operations blocked, and the confirmation SHALL have named that posture
 
 #### Scenario: Strict posture
 - **WHEN** `--strict` is given
-- **THEN** the lane SHALL start with the workspace-write sandbox selected explicitly rather than inherited from defaults
+- **THEN** a codex lane SHALL start with the workspace-write sandbox selected explicitly rather than inherited from defaults, and a pi lane SHALL start with out-of-bounds file writes routed to human approval
 
 #### Scenario: Bypass requested
 - **WHEN** the user asks for a lane with approvals and sandbox bypassed
 - **THEN** the dispatcher SHALL decline and explain that this posture is not offered
 
 ### Requirement: Startup dialogs are read, never answered by default
-Before sending any input to a lane, the dispatcher SHALL read the lane's pane. When a selection list or dialog is present it SHALL NOT submit the highlighted default. It SHALL choose an option that changes nothing on the user's machine and persists no preference, and it SHALL ask the user before accepting a dialog that persists a setting.
+Before sending any input to a lane, the dispatcher SHALL read the lane's pane. When a selection list or dialog is present it SHALL NOT submit the highlighted default. It SHALL choose an option that changes nothing on the user's machine and persists no preference, and it SHALL ask the user before accepting a dialog that persists a setting. Notices that do not take input SHALL NOT be treated as dialogs.
 
 #### Scenario: Update prompt at startup
 - **WHEN** codex shows an update prompt whose default option upgrades codex
@@ -86,20 +90,28 @@ Before sending any input to a lane, the dispatcher SHALL read the lane's pane. W
 - **WHEN** codex asks whether to trust the repository
 - **THEN** the dispatcher SHALL ask the user before accepting, because acceptance is recorded in the user's codex configuration
 
+#### Scenario: Update notice in pi
+- **WHEN** pi prints an update-available notice or a changelog at startup
+- **THEN** the dispatcher SHALL treat the lane as ready once its input box is shown, and pi SHALL NOT be updated
+
 #### Scenario: Agent exits during startup
 - **WHEN** the agent process exits before becoming ready
-- **THEN** the dispatcher SHALL read the pane for the actual error, record that lane as failed with that error, and continue launching the other lanes
+- **THEN** the dispatcher SHALL read the pane for the actual error, record that lane as failed with that error unless the executor's rules allow one retry for that error, and continue launching the other lanes
 
 ### Requirement: A lane is primed once with a goal and its boundaries
-After the composer is visible, the dispatcher SHALL prime the lane exactly once with a codex goal that applies the change through the OpenSpec apply skill and states the lane boundaries: work only in this checkout, tick each task when it is complete, make one Conventional Commits commit per task, never push, never merge, never open a pull request, and finish when every task is ticked and the working tree is clean.
+After the lane's input box is visible, the dispatcher SHALL prime the lane exactly once with a goal, through the executor's goal facility, that applies the change through the OpenSpec apply skill and states the lane boundaries: work only in this checkout, tick each task when it is complete, make one Conventional Commits commit per task, never push, never merge, never open a pull request, and finish when every task is ticked and the working tree is clean. The skill SHALL be named in the form the executor understands.
 
 #### Scenario: Goal accepted
 - **WHEN** the goal command is accepted
 - **THEN** the lane SHALL begin applying the change without further input
 
 #### Scenario: Goal mode unavailable
-- **WHEN** codex rejects the goal command
+- **WHEN** the executor rejects the goal command
 - **THEN** the dispatcher SHALL send the same instructions as a plain prompt and report that lane as driven by supervision nudges
+
+#### Scenario: Session known before the goal
+- **WHEN** herdr already reports a session for a pi lane before any goal was sent
+- **THEN** the session alone SHALL NOT count as evidence that the lane was primed
 
 ### Requirement: Delivery of a prompt is established from the lane, not from the call
 When a prompt call fails, times out or is interrupted, the dispatcher SHALL inspect the lane's actual state before sending anything again, and SHALL NOT re-send a goal to a lane that has already received one.
