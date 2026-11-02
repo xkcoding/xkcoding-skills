@@ -54,7 +54,7 @@ The lane mechanics shipped in the `codex` and `omp` skill directories SHALL be i
 - **THEN** each lane SHALL run its own executor and neither dispatch SHALL alter the other lane
 
 ### Requirement: An omp lane's shell runs inside an operating-system sandbox
-Every shell command an omp lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree, the parts of the repository's common git directory a commit writes (objects, refs, reflogs and LFS objects) plus the lane's own administrative directory, the user's package-manager caches, and a temporary directory private to the lane. Nothing that tells git where a repository or its configuration is — the worktree's `.git` pointer, the lane's administrative `commondir`, `gitdir` and `config.worktree`, the common directory's `config`, `commondir`, `config.worktree` and hooks, and other worktrees' administrative files — SHALL be writable, and the dispatcher's own git commands SHALL NOT run a repository-configured file-system monitor. The sandbox SHALL deny reading the user's SSH, cloud, GnuPG, container, Kubernetes, `netrc`, GitHub and GitLab CLI, codex and omp credential locations. Outbound network access from the sandbox SHALL be limited to an allowlist of package-registry hosts: the public registries and the registries and mirrors the user configured for npm, pip, Go, Maven and Cargo. Package managers that do not use the sandbox's proxy on their own SHALL be configured inside the sandbox to use it. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
+Every shell command an omp lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree, the parts of the repository's common git directory a commit writes (objects, loose and packed refs, reflogs and LFS objects) plus the lane's own administrative directory, the user's package-manager caches, and a temporary directory private to the lane. Nothing that tells git where a repository or its configuration is — the worktree's `.git` pointer, the lane's administrative `commondir`, `gitdir` and `config.worktree`, the common directory's `config`, `commondir`, `config.worktree` and hooks, and other worktrees' administrative files — SHALL be writable, and the dispatcher's own git commands SHALL NOT run a repository-configured file-system monitor. The sandbox SHALL deny reading the user's SSH, cloud, GnuPG, container, Kubernetes, `netrc`, GitHub and GitLab CLI, codex and omp credential locations. Outbound network access from the sandbox SHALL be limited to an allowlist of package-registry hosts: the public registries and the registries and mirrors the user configured for npm, pip, Go, Maven and Cargo. Package managers that do not use the sandbox's proxy on their own SHALL be configured inside the sandbox to use it. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
 
 #### Scenario: Commit from the lane
 - **WHEN** an omp lane runs `git commit` in its worktree
@@ -81,7 +81,7 @@ Every shell command an omp lane runs — through its shell tool or a user-entere
 - **THEN** every shell command SHALL be refused with that reason and no shell command SHALL run outside the sandbox
 
 ### Requirement: An omp lane's file tools are confined to the same writable locations
-omp's file-writing tools SHALL be allowed to write only inside the same writable locations as the sandbox, with every symbolic-link component resolved before comparison, including a final link whose target does not exist yet. An edit SHALL be checked against every file it names — each file of a multi-file patch and every move or rename destination — and an edit whose files cannot all be named SHALL be blocked. omp's file-reading tools SHALL NOT read the directories the sandbox denies reading — directly, through a symbolic link, or by searching or finding through one of their ancestors — and SHALL read only one plain filesystem path per call: any target carrying a scheme (with or without `//`), containing `://`, starting with `www.`, or listing several targets SHALL be blocked. The goal SHALL name the OpenSpec apply skill by its path in the lane. By default a call outside these limits SHALL be blocked and the reason returned to the model. Under `--strict` an out-of-bounds write SHALL instead wait for a human's approval, which the supervisor SHALL surface and SHALL NOT answer; out-of-bounds reads SHALL stay blocked.
+omp's file-writing tools SHALL be allowed to write only inside the same writable locations as the sandbox, with every symbolic-link component resolved and every existing component spelled as on disk before comparison, including a final link whose target does not exist yet. An edit SHALL be checked against every file it names — each file header of its patch text however indented or spaced, every move or rename destination, and any `path` it also carries — and an edit whose files cannot all be named SHALL be blocked. omp's file-reading tools SHALL NOT read the directories the sandbox denies reading — directly, through a symbolic link, or by searching or finding through one of their ancestors — and SHALL read only plain filesystem paths: a target carrying a scheme (with or without `//`, by omp's own rule that a one-letter scheme, a dotted name or a following line selector such as `README.md:1-20` is not one), containing `://` or starting with `www.` SHALL be blocked, and a target listing several paths SHALL have each of them checked. The goal SHALL name the OpenSpec apply skill by its path in the lane. By default a call outside these limits SHALL be blocked and the reason returned to the model. Under `--strict` an out-of-bounds write SHALL instead wait for a human's approval, which the supervisor SHALL surface and SHALL NOT answer; out-of-bounds reads SHALL stay blocked.
 
 #### Scenario: Write inside the lane through an alias path
 - **WHEN** an omp lane writes a file whose path reaches the worktree through a symbolic link
@@ -103,6 +103,14 @@ omp's file-writing tools SHALL be allowed to write only inside the same writable
 - **WHEN** an omp lane's read tool targets `https:/host/x`, `urn:x:y`, or `README.md;~/.ssh/id_rsa`
 - **THEN** the call SHALL be blocked and nothing SHALL be fetched or read
 
+#### Scenario: Reading lines of a root file
+- **WHEN** an omp lane's read tool targets `README.md:1-20` or `Makefile:12`
+- **THEN** the call SHALL be allowed
+
+#### Scenario: Different letter case on a case-insensitive disk
+- **WHEN** an omp lane writes `.GIT` in its worktree or reads `~/.SSH/config`
+- **THEN** the call SHALL be blocked as for `.git` and `~/.ssh/config`
+
 #### Scenario: Multi-file or moving edit
 - **WHEN** an omp lane's edit names a file inside the lane together with one outside it, or moves a file inside the lane to a destination outside it
 - **THEN** the call SHALL be blocked and no file SHALL change
@@ -120,11 +128,19 @@ omp's file-writing tools SHALL be allowed to write only inside the same writable
 - **THEN** the lane SHALL wait for approval and the next sweep SHALL report the request to the user
 
 ### Requirement: A lane that changed omp's project configuration is not restarted on its own
-omp loads extensions, settings, MCP servers and hooks from the project's `.omp/` and `.claude/` directories in its own process, outside the sandbox. Launching an omp lane whose own commits or uncommitted changes touch those directories SHALL be refused with the list of files, so that a human reviews them first.
+omp loads extensions, settings, MCP servers and hooks from the project — `.omp/`, `.claude/`, `mcp.json`, `.mcp.json`, `.vscode/`, `.cursor/`, `.codex/`, `.gemini/` — in its own process, outside the sandbox. Launching an omp lane whose own commits or worktree files, ignored ones included and compared case-insensitively, touch those locations SHALL be refused with the list of files; after a human reviewed them, launching with `--reviewed-config` SHALL proceed.
 
 #### Scenario: Relaunch after the lane wrote an extension
 - **WHEN** an omp lane created `.omp/extensions/x.ts` and its agent is launched again
 - **THEN** the launch SHALL be refused, naming `.omp/extensions/x.ts`, and no agent SHALL start
+
+#### Scenario: Configuration hidden from git
+- **WHEN** an omp lane added `.omp/extensions/` to `.gitignore` and wrote a file there
+- **THEN** a relaunch SHALL still be refused, naming that directory
+
+#### Scenario: Human reviewed the files
+- **WHEN** the user reviewed the listed files and the lane is launched with `--reviewed-config`
+- **THEN** the launch SHALL proceed
 
 ### Requirement: An omp lane runs only an allowlisted set of tools
 An omp lane SHALL start with only the tools needed to apply a change — read, the sandboxed shell, edit, write and the goal tool — available to the model. Code-evaluation, web, browser, sub-agent, file-search tools that the guard does not cover, structured-edit devices, the interactive pseudo-terminal shell and language-server tools SHALL NOT be available in the lane, and MCP tools SHALL NOT be callable from it. MCP servers that omp itself starts from the user's or the repository's configuration are outside this requirement and are documented as such.
