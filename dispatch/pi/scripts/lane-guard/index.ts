@@ -131,10 +131,14 @@ export default function (pi: ExtensionAPI) {
 		const target = canonical(isAbsolute(raw) ? raw : resolve(ctx.cwd, raw));
 		const inside = roots.some((r) => within(target, r)) && !denied.some((d) => within(target, d));
 		if (inside) return undefined;
-		const reason = `${target} is outside this lane's writable paths (the lane worktree and the repository's git directory, except its hooks and config)`;
+		const reason = `${target} is outside this lane's writable paths (the lane worktree, the repository's git directory except its hooks and config, and package-manager caches)`;
 		if (policy.posture === "strict" && ctx.hasUI) {
-			const ok = await ctx.ui.confirm("lane-guard: allow a write outside the lane?", `${event.toolName} ${target}`);
-			if (ok) return undefined;
+			// "Deny" comes first so that a stray enter can never approve the write.
+			const choice = await ctx.ui.select(`lane-guard: allow ${event.toolName} outside the lane?\n  ${target}`, [
+				"Deny",
+				"Allow",
+			]);
+			if (choice === "Allow") return undefined;
 			return { block: true, reason: `${reason}; a human declined it` };
 		}
 		return { block: true, reason };

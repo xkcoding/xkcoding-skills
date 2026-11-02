@@ -480,6 +480,7 @@ EXECUTORS = {
         # herdr reports a codex session only after the first turn ends, so a session proves the goal arrived.
         "session_proves_primed": True,
         "confirm_submit": False,
+        "status_hides_dialogs": False,
         "input_box": None,
         "launch_gap": 0,
         "startup_problem": None,
@@ -496,6 +497,8 @@ EXECUTORS = {
         "session_proves_primed": False,
         # A prompt typed right after startup can stay in the input box (known-behaviors P9).
         "confirm_submit": True,
+        # herdr keeps reporting "working" while a pi selector waits for a human (known-behaviors P19).
+        "status_hides_dialogs": True,
         "input_box": pi_input_box,
         # Several pi starting together race for pi's own config lock (P14-P16).
         "launch_gap": 4,
@@ -1057,6 +1060,10 @@ def lane_overview(root, lane, agents, book, remote_heads, route):
     info["nudges_without_progress"] = stale
 
     status = (agent or {}).get("agent_status")
+    if agent and executor and EXECUTORS[executor]["status_hides_dialogs"] and status != "blocked":
+        if EXECUTORS[executor]["pane_state"](read_pane(agent_ref(agent))) == "dialog":
+            status = "blocked"
+            info["agent"]["status"] = "blocked (dialog in pane)"
     goal = info["goal"].get("goal_status")
     done = st.get("state") == "all_done" and info["tree_clean"]
     if agents is None:
