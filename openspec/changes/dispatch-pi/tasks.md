@@ -17,10 +17,10 @@
 ## 2. pi 适配行（spec `dispatch-executors`、`dispatch-lane-launch`、`dispatch-supervision`）
 
 - [ ] 2.1 pi 的 launch（design D3）：参数 `-e <skill>/scripts/lane-guard -e npm:pi-codex-goal@0.6.1 --approve --no-mcp --tui-mode regular --lane-policy <file>`；`launch` 先生成策略文件到 `~/.claude/dispatch/<repo-id>/<change>-policy.json`（allowWrite = worktree + git common dir，denyWrite = 其下 `hooks` / `config`，denyRead = `~/.ssh` / `~/.aws` / `~/.gnupg`，allowedDomains = 公共源 + `npm config get registry` / `pip config get global.index-url` 的 host，posture）；验证：临时仓库里对一条 lane 运行 `launch --executor pi`，策略文件内容与上述一致且路径已做 realpath，pane 底栏出现 lane-guard 的就绪提示
-- [ ] 2.2 pi 的 `goal_probe`（design D5）：从 herdr 报的 session 路径倒序取最后一条 `customType == "pi-codex-goal"` 且带 `status` 的记录，连字符规范为下划线；文件不存在或无记录时返回 `unavailable`；验证：用实测形态构造的 JSONL 样例（只有 `usage/active`；末条 `set/complete`；含 `budget-limited`；空文件）分别得到 `active` / `complete` / `budget_limited` / `unavailable`
-- [ ] 2.3 pi 的 `pane_state`（design D6、P7）：`Working` 分隔行 → `working`；`To resume this session` 或无 pi 底栏的 shell → `exited`；空输入框 + 底栏 → `ready`；其余 → `unknown`；changelog 与 Update Available 横幅不影响判断；验证：用实测抓到的四段 pane 文本（启动就绪含 changelog、工作中、goal 完成空闲、退出后）做样例，分类结果正确
+- [x] 2.2 pi 的 `goal_probe`（design D5）：从 herdr 报的 session 路径倒序取最后一条 `customType == "pi-codex-goal"` 且带 `status` 的记录，连字符规范为下划线；文件不存在或无记录时返回 `unavailable`；验证：用实测形态构造的 JSONL 样例（只有 `usage/active`；末条 `set/complete`；含 `budget-limited`；空文件）分别得到 `active` / `complete` / `budget_limited` / `unavailable`
+- [x] 2.3 pi 的 `pane_state`（design D6、P7）：`Working` 分隔行 → `working`；`To resume this session` 或无 pi 底栏的 shell → `exited`；空输入框 + 底栏 → `ready`；其余 → `unknown`；changelog 与 Update Available 横幅不影响判断；验证：用实测抓到的四段 pane 文本（启动就绪含 changelog、工作中、goal 完成空闲、退出后）做样例，分类结果正确
 - [ ] 2.4 pi 的"已下达 goal"证据与提交确认（design D5、D6）：pi 不以 session 存在为证据；`launch` 后等到 `ready` 才允许 `prompt`；`prompt` 后约 15 秒内未进入 `working` 且输入框仍是所发文字 → `send-keys enter` 一次，仍不动则 `ok:false` 附 pane 尾部；`done` 与 `idle` 都视为不在工作；验证：临时仓库里对刚启动的 pi lane 立即 `prompt --goal`，lane 进入工作且 session 里只有一条 goal `set` 记录；对已下达 goal 的 lane 再发 `--goal` 被拒
-- [ ] 2.5 pi 的启动间隔与锁冲突重试（design D9）：适配表加 `launch_gap`（pi 4 秒、codex 0），`launch` 遇到 `exited` 且 pane 尾部是配置锁冲突时等 `launch_gap` 重启一次并在结果里带 `retried`，其它退出不重试；`SKILL.md` 的派发步骤写明 pi lane 逐个 launch、goal 之间同样间隔；验证：用 5.5 抓到的锁冲突 pane 文本与一段普通启动报错做样例，前者判为可重试、后者不重试
+- [ ] 2.5 pi 的启动间隔与"无模型"重启（design D9、P16）：适配表加 `launch_gap`（pi 4 秒、codex 0）；`launch` 拿到 `ready` 后若底栏模型为 `unknown` 或 pane 出现 `No API key found`，则 `/quit`、隔 `launch_gap` 重启一次并在结果里带 `retried: "no_model"`，仍无模型则 `ok:false`；退出类失败不重试；`SKILL.md` 的派发步骤写明 pi lane 逐个 launch、goal 之间同样间隔；验证：用 P16 实测的无模型 pane 文本与正常就绪的 pane 文本做样例，前者判为无模型、后者不是；5.5 里真跑一次
 
 ## 3. lane-guard 扩展（spec `dispatch-executors` 沙箱 / 文件工具 / MCP / 不改用户配置）
 
@@ -40,5 +40,5 @@
 - [ ] 5.2 pi lane 的边界探针：在 lane 里让 pi 依次做 worktree 内 commit、bash 写主 checkout、bash 写 `.git/hooks`、`write` 写主 checkout、`edit` 改 `.git/config`、经 `/tmp` 别名写 worktree、curl 未放行域名、npm 源可达；再把策略文件改坏重启 lane 让 pi 跑任意 bash；验证：commit / 别名写入 / npm 源成功，其余全部被拒且无文件变化，改坏策略后 bash 被拒并给出原因
 - [ ] 5.3 `--strict` 的 pi lane：诱发一次越界 `write`，抓取确认框的 pane 文本，据此补 `pane_state` 的 `dialog` 规则并写进 known-behaviors；验证：补规则后 `list` 对该 lane 给出 `blocked`，lane 在人工拒绝后继续工作
 - [ ] 5.4 混跑：同一临时仓库一条 codex lane、一条 pi lane 同时跑完；验证：分别从 `dispatch/codex/scripts/lane.py` 与 `dispatch/pi/scripts/lane.py` 执行 `list`，两份输出逐字相同；codex lane 的 verdict 序列与改动前一致（goal 走到 `complete`、`claims_done`）
-- [ ] 5.5 配置锁冲突：在一个临时的 `PI_CODING_AGENT_DIR`（空的 `auth.json`，不复制任何凭据）里预先占住 `auth.json.lock`，启动 pi 抓下退出时的 pane 原文，写进 known-behaviors 并据此定下 2.5 的匹配规则；再在真实配置下一次派发 4 条 pi lane；验证：锁被占时 pi 退出且原文含锁相关报错；4 条 lane 全部到 `ready`、各自完成 goal，`list` 中无 `no_agent`
+- [ ] 5.5 无模型重启与并发派发：在临时仓库里对一条 lane 用临时 `PI_CODING_AGENT_DIR`（空 `auth.json`，不复制凭据）模拟"无模型"启动，确认 `launch` 先重启一次、再以 `ok:false` 报无模型且未发 goal；再在真实配置下一次派发 4 条 pi lane；验证：4 条 lane 全部到 `ready`、各自完成 goal，`list` 中无 `no_agent`，相邻两次 launch 的就绪时间间隔不少于 4 秒
 - [ ] 5.6 清理：先 `herdr worktree remove --force`（或关闭 workspace）再删临时目录，删对应的 pi session；验证：`herdr workspace list` 无实验 workspace，`/tmp` 无实验目录

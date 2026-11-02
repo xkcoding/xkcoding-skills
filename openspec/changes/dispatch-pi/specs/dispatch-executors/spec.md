@@ -108,18 +108,22 @@ A pi lane SHALL be primed once with a goal that applies the change through the O
 - **THEN** the lane SHALL be reported as failed to start with the error from the pane, and no goal SHALL be sent
 
 ### Requirement: Pi lanes are started and primed one at a time
-When several pi lanes are dispatched, the dispatcher SHALL start them one after another, beginning each start only after the previous lane is ready and a fixed spacing has passed, and SHALL space the goals sent to pi lanes by the same interval. When a pi lane exits during startup because pi could not lock its own configuration files, the dispatcher SHALL start that lane once more after the spacing; any other startup exit, or a second lock failure, SHALL be recorded as that lane's failure.
+When several pi lanes are dispatched, the dispatcher SHALL start them one after another, beginning each start only after the previous lane is ready and a fixed spacing has passed, and SHALL space the goals sent to pi lanes by the same interval. A pi lane that comes up without a usable model — because pi could not read its own configuration while another pi held the lock — SHALL be stopped and started once more after the spacing, before any goal is sent; a second such start, or any other startup failure, SHALL be recorded as that lane's failure.
 
 #### Scenario: Four pi lanes dispatched together
 - **WHEN** four pi lanes are dispatched in one invocation
 - **THEN** no two of them SHALL be starting at the same time, and all four SHALL reach the ready state
 
-#### Scenario: Startup lost the configuration lock
-- **WHEN** a pi lane exits during startup and its pane shows that a pi configuration file was locked
-- **THEN** the dispatcher SHALL start it once more after the spacing, and the report SHALL mention the retry
+#### Scenario: Started without a usable model
+- **WHEN** a pi lane reaches its input box but shows no model, or reports that no API key was found
+- **THEN** the dispatcher SHALL stop it, start it once more after the spacing, send no goal before the restart, and the report SHALL mention the retry
+
+#### Scenario: Still without a model after the restart
+- **WHEN** the restarted lane again shows no usable model
+- **THEN** the dispatcher SHALL record the lane as failed to start, naming the missing model, and SHALL NOT retry again
 
 #### Scenario: Startup fails for another reason
-- **WHEN** a pi lane exits during startup with any other error
+- **WHEN** a pi lane exits during startup with any error
 - **THEN** the dispatcher SHALL NOT retry it and SHALL record the error as the lane's failure
 
 ### Requirement: A pi prompt is confirmed as submitted

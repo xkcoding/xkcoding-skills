@@ -29,6 +29,8 @@ herdr 0.9.0、pi 1.3.0（goal 轮）/ 1.4.0（沙箱与守卫轮）、pi-codex-g
 | P13 | 官方 sandbox 示例的配置合并按键浅合并：给出 `filesystem` 即整体替换默认值（默认里有 `/tmp`） |
 | P14 | （源码，pi 1.4.0）`dist/core/auth-storage.js`、`settings-manager.js`、`trust-manager.js` 对 `auth.json` / `settings.json` / `trust.json` 的同步锁都是 proper-lockfile `lockSync`，重试 10 次 × 20ms，约 200ms 拿不到就抛 `ELOCKED`；`auth-storage` 的异步路径另有 30 秒的等待上限 |
 | P15 | （另一会话的实地反馈，2026-10-29）同一时间启动多个 pi，部分进程抢不到全局配置锁、读不到 API key 就退出；启动之间隔 4 秒、只重跑失败的那些即可恢复 |
+| P16 | （2026-11-02，pi 1.4.0，临时 `PI_CODING_AGENT_DIR`、空 `auth.json`）print 模式读不到 key 时打印 `No API key found for the selected model.` 并退出 1；**交互模式不退出**：界面照常就绪，底栏统计行为 `0.0%/0 (auto)`、模型位显示 `unknown`，发 prompt 后输出 `Error: No API key found for the selected model.`，lane 回到空闲 |
+| P17 | （同上）pi 的项目信任弹层：分隔线之间是 `Trust project folder?`、路径、说明，选项行以 `→ ` 标出高亮项（`Trust` / `Trust parent folder (…)` / `Trust (this session only)` / `Do not trust` / `Do not trust (this session only)`），末行 `↑↓ navigate  enter select  escape/ctrl+c cancel` |
 
 ## Goals / Non-Goals
 
@@ -114,7 +116,7 @@ herdr agent start <name> --kind pi --pane <p> -- \
 P14 / P15 说明多个 pi 同时启动会在 pi 自己的配置锁上互相挤掉。做法：
 
 - 派发流程里 pi lane 的 `launch` 串行，前一条到 `ready` 后再等 `launch_gap`（适配表里，初值 4 秒，取自 P15 的实地经验）才启动下一条；"全部启动完再下达 goal"保留，但 pi 的各条 goal 之间同样隔 `launch_gap`，避免首次请求模型时一起读 `auth.json`。codex 的 `launch_gap` 为 0，行为不变。
-- `launch` 得到 `exited` 时，pi 适配行检查 pane 尾部是否是锁冲突（匹配 `ELOCKED` 或 lock 相关报错；确切文本在任务 5.5 复现后写死）。是 → 等 `launch_gap` 后重启一次，结果里带 `retried: "config_lock"`；仍失败或不是锁冲突 → 按原规则记为该 lane 的失败、不再重试。
+- 锁冲突在 lane 里**不表现为退出**（P16）：交互模式的 pi 带着 `unknown` 模型照常就绪，要到发 goal 时才报 `No API key found`。所以 pi 适配行在 `launch` 拿到 `ready` 后再检查"有没有模型"：底栏模型位是 `unknown`、或 pane 里出现 `No API key found` → 发 `/quit`，等回到 shell，隔 `launch_gap` 重启一次，结果带 `retried: "no_model"`；重启后仍无模型 → 记为启动失败、不再重试，goal 一条都不发。真缺凭据的情况 doctor 已先拦下（`pi_model_ready`），万一漏过也只是多一次重启。
 - 间隔只能管住本次派发；同一时刻用户在别处启动的 pi（如另一会话的评测）仍可能撞锁，靠上面这一次重试兜住。
 
 替代方案：给 pi 换一个独立的 `PI_CODING_AGENT_DIR` 彻底避开共享锁——需要把凭据复制出去，违反"不处理凭据"；不采用。

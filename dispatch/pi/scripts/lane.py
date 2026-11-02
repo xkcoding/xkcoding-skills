@@ -331,6 +331,142 @@ def codex_label():
     return first_line(["codex", "--version"]) or "codex (version unknown)"
 
 
+PI_GOAL_EXTENSION = "pi-codex-goal@0.6.1"  # pinned: bumping it means re-running the probes in known-behaviors
+PI_GUARD_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "lane-guard")
+PI_PUBLIC_REGISTRIES = ["npmjs.org", "*.npmjs.org", "registry.npmjs.org", "registry.yarnpkg.com", "pypi.org",
+                        "*.pypi.org", "files.pythonhosted.org", "github.com", "*.github.com", "api.github.com",
+                        "raw.githubusercontent.com"]
+PI_RULE = re.compile(r"^\s*─{8,}\s*$")
+PI_WORKING_RULE = re.compile(r"^\s*─+\s+\S+\s+Working\b")
+PI_STATS = re.compile(r"\d+(?:\.\d+)?%/\d+(?:\.\d+)?[KMG]?\b")
+
+
+def pi_goal_probe(session):
+    """pi-codex-goal keeps the goal in the session file herdr reports (agent_session kind "path"):
+    the last custom entry of that type carrying a status is the current state."""
+    if not session or not os.path.isfile(session):
+        return {"probe": "unavailable", "reason": "no session file yet"}
+    last = None
+    try:
+        with open(session, errors="replace") as fh:
+            for line in fh:
+                if '"pi-codex-goal"' not in line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except ValueError:
+                    continue
+                data = entry.get("data") or entry.get("details") or {}
+                goal = data.get("goal") or {}
+                status = data.get("status") or goal.get("status")
+                if entry.get("customType") == "pi-codex-goal" and status:
+                    last = (status, data.get("usage") or goal.get("usage") or {})
+    except OSError as exc:
+        return {"probe": "unavailable", "reason": str(exc)}
+    if not last:
+        return {"probe": "unavailable", "reason": "no goal recorded in this session"}
+    status = re.sub(r"(?<=[a-z])(?=[A-Z])", "_", last[0]).replace("-", "_").lower()
+    return {"probe": "ok", "goal_status": status, "tokens_used": last[1].get("tokensUsed"),
+            "time_used_seconds": last[1].get("activeSeconds")}
+
+
+def pi_layout(text):
+    """(top border, bottom border, stats line, lines) of pi's input box, or None when the TUI is not drawn."""
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()][-60:]
+    stats = max([i for i, ln in enumerate(lines) if PI_STATS.search(ln)] or [-1])
+    resumed = max([i for i, ln in enumerate(lines) if "To resume this session: pi" in ln] or [-1])
+    if stats < 0 or resumed > stats:
+        return None
+    bottom = max([i for i in range(stats) if PI_RULE.match(lines[i])] or [-1])
+    top = max([i for i in range(bottom) if PI_RULE.match(lines[i]) or PI_WORKING_RULE.match(lines[i])] or [-1])
+    if top < 0:
+        return None
+    return top, bottom, stats, lines
+
+
+def pi_input_box(text):
+    lay = pi_layout(text)
+    return "\n".join(lay[3][lay[0] + 1:lay[1]]).strip() if lay else None
+
+
+def pi_pane_state(text):
+    """working: the box's top border carries the spinner; ready: empty box; typed: text waiting in the box;
+    dialog: a selector (↑↓ navigate / enter select) is open; exited: pi printed its resume hint after the TUI."""
+    selector = re.compile(r"enter (select|confirm)|↑↓ navigate|\(y/n\)", re.I)
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    lay = pi_layout(text)
+    if lay is None:
+        if any(selector.search(ln) for ln in lines[-12:]):
+            return "dialog"  # e.g. the project-trust prompt, drawn before the TUI's footer exists
+        resumed = any("To resume this session: pi" in ln for ln in lines[-8:])
+        return "exited" if resumed else "unknown"
+    top, bottom, _, lines = lay
+    box = lines[top + 1:bottom]
+    if any(selector.search(ln) for ln in box + lines[bottom:]):
+        return "dialog"
+    if PI_WORKING_RULE.match(lines[top]):
+        return "working"
+    return "typed" if box else "ready"
+
+
+def pi_startup_problem(text):
+    """pi that lost the race for its config lock still starts, but with no model (known-behaviors P16)."""
+    lay = pi_layout(text)
+    if lay and re.search(r"\bunknown\s*$", lay[3][lay[2]]):
+        return "no_model"
+    if "No API key found" in text:
+        return "no_model"
+    return None
+
+
+def registry_hosts(cwd):
+    """Package registries the user configured (npm, pip), so a lane can install dependencies from them."""
+    hosts = []
+    for cmd in (["npm", "config", "get", "registry"], ["pip3", "config", "get", "global.index-url"],
+                ["pip", "config", "get", "global.index-url"]):
+        rc, out, _ = run(cmd, cwd=cwd, timeout=20)
+        m = re.match(r"^[a-z+]+://(?:[^@/]+@)?([^/:]+)", out.strip()) if rc == 0 else None
+        if m:
+            hosts.append(m.group(1).lower())
+    return hosts
+
+
+def pi_policy(root, change, worktree, common_git_dir, strict):
+    """Write the lane's sandbox policy outside the repository and return its path."""
+    if not os.path.isdir(os.path.join(PI_GUARD_DIR, "node_modules", "@anthropic-ai", "sandbox-runtime")):
+        fail("the pi lane-guard is not installed next to this script; run the pi setup sub-command",
+             lane_guard=PI_GUARD_DIR)
+    home = os.path.expanduser("~")
+    domains = []
+    for d in PI_PUBLIC_REGISTRIES + registry_hosts(worktree):
+        if d not in domains:
+            domains.append(d)
+    policy = {
+        "version": 1,
+        "posture": "strict" if strict else "block",
+        "allowWrite": [real(worktree), common_git_dir],
+        "denyWrite": [os.path.join(common_git_dir, "hooks"), os.path.join(common_git_dir, "config")],
+        "denyRead": [os.path.join(home, d) for d in (".ssh", ".aws", ".gnupg")],
+        "allowedDomains": domains,
+    }
+    path = os.path.join(os.path.dirname(bookkeeping_path(root)), change + "-policy.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as fh:
+        json.dump(policy, fh, indent=2)
+    return path
+
+
+def pi_launch_flags(strict, common_git_dir, policy_file):
+    # --approve trusts project resources for this run only; --no-mcp keeps MCP tools (outside the sandbox) out.
+    # Not --no-extensions: that would also drop herdr's own pi integration.
+    return ["-e", PI_GUARD_DIR, "-e", "npm:" + PI_GOAL_EXTENSION, "--approve", "--no-mcp",
+            "--tui-mode", "regular", "--lane-policy", policy_file]
+
+
+def pi_label():
+    return "pi {} + {}".format(first_line(["pi", "--version"]) or "(version unknown)", PI_GOAL_EXTENSION)
+
+
 EXECUTORS = {
     "codex": {
         "skill": "$openspec-apply-change {c}",
@@ -342,9 +478,27 @@ EXECUTORS = {
         # herdr reports a codex session only after the first turn ends, so a session proves the goal arrived.
         "session_proves_primed": True,
         "confirm_submit": False,
+        "input_box": None,
         "launch_gap": 0,
-        "lock_error": None,
+        "startup_problem": None,
         "policy": None,
+    },
+    "pi": {
+        "skill": "the openspec-apply-change skill (read its SKILL.md first and follow it)",
+        "goal_probe": pi_goal_probe,
+        "pane_state": pi_pane_state,
+        "launch_flags": pi_launch_flags,
+        "label": pi_label,
+        "default_posture": "block",
+        # herdr reports a pi session (a file path) before any prompt, so a session proves nothing.
+        "session_proves_primed": False,
+        # A prompt typed right after startup can stay in the input box (known-behaviors P9).
+        "confirm_submit": True,
+        "input_box": pi_input_box,
+        # Several pi starting together race for pi's own config lock (P14-P16).
+        "launch_gap": 4,
+        "startup_problem": pi_startup_problem,
+        "policy": pi_policy,
     },
 }
 
@@ -680,6 +834,16 @@ def wait_gap(root, executor, field):
     return 0
 
 
+def stop_agent(name, pane):
+    """Quit an executor this launch just started and wait for the pane's shell to come back."""
+    run(["herdr", "agent", "prompt", name, "/quit"])
+    for _ in range(30):
+        if not any(a.get("pane_id") == pane for a in (herdr_agents() or [])):
+            return True
+        time.sleep(1)
+    return False
+
+
 def cmd_launch(args):
     root = main_root()
     ex = EXECUTORS[args.executor]
@@ -713,18 +877,22 @@ def cmd_launch(args):
         return name, ((data or {}).get("error") or {}).get("code"), text, ex["pane_state"](text)
 
     name, err, text, state = start()
+    problem = ex["startup_problem"](text) if ex["startup_problem"] and state == "ready" else None
     retried = None
-    # An executor that loses a race for its own config lock exits at startup; one more start after the gap.
-    if state == "exited" and ex["lock_error"] and ex["lock_error"].search(text):
-        retried = "config_lock"
+    # An executor that lost the race for its own config lock comes up without a model: stop it, start it
+    # once more after the gap, and never send a goal to the first one.
+    if problem:
+        retried = problem
+        stop_agent(name, pane)
         time.sleep(ex["launch_gap"])
         name, err, text, state = start()
-    up = state in ("ready", "dialog")
+        problem = ex["startup_problem"](text) if state == "ready" else None
+    up = state in ("ready", "dialog") and not problem
     book_update(root, args.change, executor=args.executor, posture=posture, agent_name=name,
                 ready_epoch=time.time() if up else None)
     emit({"ok": up, "change": args.change, "executor": args.executor, "agent_name": name, "pane_id": pane,
           "workspace_id": ws, "posture": posture, "start_result": err or "started", "state": state,
-          "retried": retried, "waited_s": waited, "policy_file": policy_file,
+          "startup_problem": problem, "retried": retried, "waited_s": waited, "policy_file": policy_file,
           "pane_tail": pane_tail(text)}, 0 if up else 1)
 
 
@@ -736,14 +904,21 @@ def wait_working(target, ms=15000):
     return rc == 0 and (((data or {}).get("result") or {}).get("agent") or {}).get("agent_status") == "working"
 
 
-def confirm_submitted(target, ex):
-    """Whether the typed prompt actually left the input box. Presses enter once when it did not; never retypes.
-    The box was empty before sending (cmd_prompt requires `ready`), so text found in it now is ours."""
+def compact(text):
+    return re.sub(r"\s+", "", text or "")
+
+
+def confirm_submitted(target, ex, message):
+    """Whether the typed prompt actually left the input box. Presses enter once when the box still holds this
+    very message, and only then: anything else in the box (a dialog, say) must never receive an enter."""
     if wait_working(target):
         return "working"
-    state = ex["pane_state"](read_pane(target))
+    text = read_pane(target)
+    state = ex["pane_state"](text)
     if state != "typed":
-        return "left_input_box"  # an empty box (or a finished turn) means the text went in
+        return "left_input_box" if state in ("ready", "working") else "unclear:" + state
+    if compact(message)[:40] not in compact(ex["input_box"](text)):
+        return "unclear:box_holds_other_text"
     rc, _, _ = run(["herdr", "agent", "send-keys", target, "enter"])
     if rc == 0 and (wait_working(target) or ex["pane_state"](read_pane(target)) != "typed"):
         return "enter_pressed"
@@ -801,7 +976,7 @@ def cmd_prompt(args):
     if args.goal or args.plain:
         # Marked even when the call errors: an interrupted prompt call has usually delivered its text.
         book_update(root, c, goal_sent_at=now(), goal_epoch=time.time(), goal_mode="goal" if args.goal else "plain")
-    submitted = confirm_submitted(target, ex) if ex["confirm_submit"] else None
+    submitted = confirm_submitted(target, ex, message) if ex["confirm_submit"] else None
     if args.cont:
         st = apply_status(lane["worktree"], c) or {}
         nudges = book_load(root).get("lanes", {}).get(c, {}).get("nudges", [])
@@ -809,7 +984,8 @@ def cmd_prompt(args):
                        "complete": (st.get("progress") or {}).get("complete")})
         book_update(root, c, nudges=nudges)
     after = agents_in(herdr_agents(), lane["worktree"])
-    ok = rc == 0 and submitted != "still_in_input_box"
+    # still_in_input_box / unclear:*: the lane did not visibly take the prompt; the orchestrator looks at the pane.
+    ok = rc == 0 and submitted in (None, "working", "left_input_box", "enter_pressed")
     emit({"ok": ok, "change": c, "executor": executor,
           "sent": message.split(" ", 1)[0] if message.startswith("/") else "prompt",
           "herdr": ((data or {}).get("error") or {}).get("code"), "submitted": submitted, "waited_s": waited,
