@@ -125,7 +125,7 @@ else
   omp_model=""
   omp_model_ready="false"
   if quiet omp --version && quiet jq --version; then
-    omp_model=$(omp config get modelRoles 2>/dev/null | jq -r '.default // empty' 2>/dev/null)
+    omp_model=$(omp config get modelRoles --json 2>/dev/null | jq -r '.value.default // empty' 2>/dev/null)
     if [[ -n "$omp_model" ]]; then
       omp_model_ready=$(bool quiet sh -c 'omp models --json 2>/dev/null | jq -e --arg m "$1" '"'"'any(.models[]; "\(.provider)/\(.id)" == $m)'"'"'' _ "$omp_model")
     fi

@@ -4,17 +4,19 @@
  * - Shell: the agent's `bash` tool and user `!` commands run inside @anthropic-ai/sandbox-runtime (Seatbelt on
  *   macOS, bubblewrap on Linux). Without a policy, or when the sandbox cannot start, every shell command is
  *   refused: nothing ever falls back to an unsandboxed shell.
- * - Files: `write` and `edit` may only touch the policy's writable roots minus its denied paths. The default
- *   posture blocks anything else and tells the model why; the strict posture asks a human instead.
+ * - Files: `write` and `edit` may only touch the policy's writable roots minus its denied paths (every file an
+ *   edit names, symlinks followed). The default posture blocks anything else and tells the model why; the strict
+ *   posture asks a human instead. `read`, `grep`, `find` and `ls` take plain paths only and never the policy's
+ *   unreadable directories.
  *
  * The policy comes only from `--lane-policy <file>`, written by lane.py outside the repository. Nothing is
  * read from the lane's own files, so the repository cannot widen its own boundary.
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, resolve, sep } from "node:path";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 import type { BashOperations, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createBashTool } from "@earendil-works/pi-coding-agent";
@@ -30,15 +32,24 @@ interface LanePolicy {
 	allowedDomains: string[];
 }
 
-// Resolve symlinks on the nearest existing ancestor, so /tmp/... and /private/tmp/... compare equal.
-function canonical(path: string): string {
-	let head = path;
-	const tail: string[] = [];
-	while (!existsSync(head) && dirname(head) !== head) {
-		tail.unshift(head.slice(dirname(head).length + 1));
-		head = dirname(head);
+// The real location a path refers to: every symlink component is followed, including a final link whose
+// target does not exist yet (writing through it creates the target), so /tmp/... equals /private/tmp/... and a
+// planted link cannot carry a write or read past the policy.
+function canonical(path: string, depth = 0): string {
+	if (depth > 40) throw new Error(`too many symbolic links: ${path}`);
+	const parts = resolve(path).split(sep).filter(Boolean);
+	let current = sep;
+	for (let i = 0; i < parts.length; i++) {
+		const next = resolve(current, parts[i]);
+		let link: string | undefined;
+		try {
+			if (lstatSync(next).isSymbolicLink()) link = readlinkSync(next);
+		} catch {
+			return resolve(next, ...parts.slice(i + 1)); // nothing exists from here on
+		}
+		current = link === undefined ? next : canonical(resolve(current, link), depth + 1);
 	}
-	return resolve(realpathSync(head), ...tail);
+	return current;
 }
 
 // A tool's path argument, absolute and with symlinks resolved; "~" means the home directory, as in a shell.
@@ -48,17 +59,41 @@ function toolPath(raw: unknown, cwd: string): string {
 	return canonical(isAbsolute(p) ? p : resolve(cwd, p));
 }
 
-// omp's read also fetches web pages and internal resources (ssh://, proc://, vault://, mcp://, ...) from its own
-// process, outside the sandbox. Only the skill:// resources that carry the OpenSpec apply skill may be read.
-const READABLE_SCHEMES = new Set(["skill"]);
-
-/** What makes a tool target something other than a plain path, or undefined for a plain path. */
-function nonPathTarget(raw: unknown): string | undefined {
+// omp's read also fetches web pages and internal resources (skill://, ssh://, proc://, vault://, mcp://, urn:...,
+// even a repaired "https:/host") from its own process, outside the sandbox, and splits a read target on ";" and
+// "," into several reads the guard never sees. The lane reads plain paths only; the goal names the apply skill
+// by its path.
+/** What makes a tool target something other than plain paths, or undefined for plain paths. */
+function nonPathTarget(raw: unknown, reader: boolean): string | undefined {
 	const p = String(raw ?? "").trim();
-	const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(p);
-	if (scheme) return `${scheme[1].toLowerCase()}://`;
+	const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(p);
+	if (scheme) return `a ${scheme[1].toLowerCase()}: resource`;
+	if (p.includes("://")) return "a resource address";
 	if (/^www\./i.test(p)) return "a web address";
+	if (reader && /[;,]/.test(p)) return "a list of targets";
 	return undefined;
+}
+
+/** Every file an edit call may touch, or undefined when they cannot all be named. omp fills in `path` only when
+ * a hashline patch names one file; several files come as `paths`, a hashline `MV DEST` and the apply_patch
+ * headers name more, and patch mode may carry `rename`. */
+function editTargets(input: Record<string, unknown>): string[] | undefined {
+	const out: string[] = [];
+	const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+	for (const key of ["path", "_path", "rename"]) {
+		const v = str(input[key]);
+		if (v) out.push(v);
+	}
+	if (Array.isArray(input.paths)) for (const v of input.paths) if (str(v)) out.push(str(v)!);
+	const text = str(input.input) ?? str(input._input);
+	if (text) {
+		for (const line of text.split("\n")) {
+			const m =
+				/^\s*MV\s+(.+?)\s*$/.exec(line) ?? /^\*\*\* (?:Add File|Update File|Delete File|Move to):\s*(.+?)\s*$/.exec(line);
+			if (m) out.push(m[1].replace(/^(["'])(.*)\1$/, "$2"));
+		}
+	}
+	return out.length ? out : undefined;
 }
 
 function within(path: string, root: string): boolean {
@@ -185,30 +220,52 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		const raw = (event.input as { path?: unknown }).path;
+		try {
+			return await guardFiles(event, ctx);
+		} catch (err) {
+			// Fail closed: a target the guard cannot resolve is not allowed.
+			return { block: true, reason: `lane-guard could not check this call: ${err instanceof Error ? err.message : err}` };
+		}
+	});
+
+	async function guardFiles(
+		event: { toolName: string; input?: unknown },
+		ctx: { cwd: string; hasUI?: boolean; ui: { select(title: string, options: string[]): Promise<string | undefined> } },
+	) {
+		const input = (event.input ?? {}) as Record<string, unknown>;
 		const reader = ["read", "grep", "find", "ls"].includes(event.toolName);
 		if (!reader && event.toolName !== "write" && event.toolName !== "edit") return undefined;
 		if (!policy) return { block: true, reason: `lane-guard has no policy: ${refusal}` };
-		const other = nonPathTarget(raw);
-		if (other) {
-			if (reader && READABLE_SCHEMES.has(other.slice(0, -3))) return undefined;
+		const raws = event.toolName === "edit" ? editTargets(input) : [input.path];
+		if (!raws) {
 			return {
 				block: true,
-				reason: `${String(raw)} is ${other.endsWith("://") ? `a ${other} resource` : other}; this lane may only ${reader ? "read" : "write"} plain paths inside its writable locations${reader ? " (and skill:// resources)" : ""}`,
+				reason: "lane-guard cannot tell which files this edit touches; name the file in the edit's path, or use write",
 			};
+		}
+		for (const raw of raws) {
+			const other = nonPathTarget(raw, reader);
+			if (other) {
+				return {
+					block: true,
+					reason: `${String(raw)} is ${other}; this lane may only ${reader ? "read" : "write"} plain paths${reader ? "" : " inside its writable locations"}, one per call`,
+				};
+			}
 		}
 		// The agent's own file readers run outside the OS sandbox, so the sandbox's denyRead is enforced here.
 		if (reader) {
-			const target = toolPath(raw, ctx.cwd);
+			const target = toolPath(raws[0], ctx.cwd);
 			// grep and find recurse, so searching an ancestor of a protected directory reads it too.
 			const recursive = event.toolName === "grep" || event.toolName === "find";
 			const hit = unreadable.find((d) => within(target, d) || (recursive && within(d, target)));
 			return hit ? { block: true, reason: `${target} reaches ${hit}, which this lane may not read` } : undefined;
 		}
-		const target = toolPath(raw, ctx.cwd);
-		const inside = roots.some((r) => within(target, r)) && !denied.some((d) => within(target, d));
-		if (inside) return undefined;
-		const reason = `${target} is outside this lane's writable paths (the lane worktree, the repository's git directory except its hooks and config, package-manager caches, and the lane's temp directory)`;
+		const outside = raws
+			.map((raw) => toolPath(raw, ctx.cwd))
+			.filter((t) => !(roots.some((r) => within(t, r)) && !denied.some((d) => within(t, d))));
+		if (!outside.length) return undefined;
+		const target = outside.join(", ");
+		const reason = `${target} ${outside.length > 1 ? "are" : "is"} outside this lane's writable paths (the lane worktree, the lane's own git data, package-manager caches, and the lane's temp directory)`;
 		if (policy.posture === "strict" && ctx.hasUI) {
 			// "Deny" comes first so that a stray enter can never approve the write.
 			const choice = await ctx.ui.select(`lane-guard: allow ${event.toolName} outside the lane?\n  ${target}`, [
@@ -219,7 +276,7 @@ export default function (pi: ExtensionAPI) {
 			return { block: true, reason: `${reason}; a human declined it` };
 		}
 		return { block: true, reason };
-	});
+	}
 
 	pi.on("session_start", async (_event, ctx) => {
 		const fail = (why: string) => {

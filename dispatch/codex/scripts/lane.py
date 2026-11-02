@@ -263,6 +263,16 @@ def lane_commits(worktree):
     return int(out) if out.isdigit() else 0
 
 
+def lane_touched(worktree):
+    """Paths changed by the lane's own commits or still uncommitted in its worktree."""
+    refs = git_out(["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"], worktree).splitlines()
+    others = [r for r in refs if "/" + LANE_BRANCH_PREFIX not in r + "/" and not r.endswith("/HEAD")]
+    paths = git_out(["log", "--name-only", "--format=", "HEAD", "--not"] + others, worktree).splitlines()
+    paths += [ln[3:].split(" -> ")[-1] for ln in git_out(["status", "--porcelain", "--untracked-files=all"],
+                                                         worktree).splitlines() if len(ln) > 3]
+    return sorted({p.strip('"') for p in paths if p.strip()})
+
+
 def read_pane(target):
     rc, out, _ = run(["herdr", "agent", "read", target, "--source", "visible"])
     if rc != 0 or out.lstrip().startswith('{"error"'):
@@ -430,6 +440,10 @@ def guard_cache_dirs(cwd, store):
     return dirs
 
 
+GUARD_DENY_READ = (".ssh", ".aws", ".gnupg", ".netrc", ".docker", ".kube", ".azure", ".config/gcloud",
+                   ".config/gh", ".config/glab-cli", ".codex", ".omp/agent", ".pi/agent")
+
+
 def guard_policy(root, change, worktree, common_git_dir, strict):
     """Write the lane's sandbox policy outside the repository and return its path."""
     if not os.path.isdir(os.path.join(GUARD_DIR, "node_modules", "@anthropic-ai", "sandbox-runtime")):
@@ -455,13 +469,18 @@ def guard_policy(root, change, worktree, common_git_dir, strict):
         "tmpDir": tmp_dir,
         # Exported inside the sandbox before every command (known-behaviors P21).
         "env": {"pnpm_config_store_dir": store, "npm_config_store_dir": store},
-        "allowWrite": [real(worktree), common_git_dir, tmp_dir] + [d for i, d in enumerate(caches) if d not in caches[:i]],
-        # The lane commits, but must never redirect git: the worktree's .git pointer and its admin files point
-        # git at a config; whoever rewrites them runs code in the next git command outside the sandbox.
-        "denyWrite": [os.path.join(common_git_dir, "hooks"), os.path.join(common_git_dir, "config"),
-                      os.path.join(real(worktree), ".git")]
+        # The lane commits, but must never redirect git: whoever can rewrite a .git pointer, a commondir, a gitdir
+        # or a config runs code in the next git command outside the sandbox. So of the shared git directory only
+        # what a commit writes is writable (objects, refs, reflogs, LFS objects) plus this lane's own admin
+        # directory minus the files that point git elsewhere; the main checkout's and other lanes' admin files
+        # stay out of reach.
+        "allowWrite": [real(worktree), tmp_dir]
+                      + [os.path.join(common_git_dir, d) for d in ("objects", "refs", "logs", "lfs")] + [admin]
+                      + [d for i, d in enumerate(caches) if d not in caches[:i]],
+        "denyWrite": [os.path.join(real(worktree), ".git")]
                      + [os.path.join(admin, f) for f in ("commondir", "gitdir", "config.worktree")],
-        "denyRead": [os.path.join(home, d) for d in (".ssh", ".aws", ".gnupg")],
+        # Credentials the lane has no use for. ~/.npmrc stays readable: npm reads its registry from it.
+        "denyRead": [os.path.join(home, d) for d in GUARD_DENY_READ],
         "allowedDomains": domains,
     }
     path = os.path.join(lane_dir, change + "-policy.json")
@@ -553,12 +572,21 @@ def omp_pane_state(text):
 
 
 def omp_default_model():
-    rc, out, _ = run(["omp", "config", "get", "modelRoles"], timeout=30)
+    rc, out, _ = run(["omp", "config", "get", "modelRoles", "--json"], timeout=30)
     try:
-        roles = json.loads(out) if rc == 0 else {}
-    except ValueError:
+        roles = (json.loads(out) if rc == 0 else {}).get("value")
+    except (ValueError, AttributeError):
         roles = {}
     return roles.get("default") if isinstance(roles, dict) else None
+
+
+def apply_skill_md(worktree):
+    """The tracked SKILL.md of the OpenSpec apply skill in a lane, relative to it (omp reads all three places)."""
+    for d in (".omp", ".agents", ".claude"):
+        rel = os.path.join(d, "skills", "openspec-apply-change", "SKILL.md")
+        if os.path.isfile(os.path.join(worktree, rel)):
+            return rel
+    return os.path.join(".omp", "skills", "openspec-apply-change", "SKILL.md")
 
 
 def omp_launch_flags(strict, common_git_dir, policy_file, goal_text):
@@ -588,13 +616,16 @@ EXECUTORS = {
         "confirm_submit": False,
         "status_hides_dialogs": False,
         "input_box": None,
+        "exit_trace": r"codex resume",
+        "project_config": (),
         "launch_gap": 0,
         "startup_problem": None,
         "policy": None,
         "model": None,
     },
     "omp": {
-        "skill": "the openspec-apply-change skill (read its SKILL.md first and follow it)",
+        # A plain path: the lane-guard blocks skill:// (omp resolves it outside the sandbox, through symlinks).
+        "skill": "the openspec-apply-change skill: read {skill_md} first and follow it",
         "goal_probe": omp_goal_probe,
         "pane_state": omp_pane_state,
         "launch_flags": omp_launch_flags,
@@ -605,9 +636,11 @@ EXECUTORS = {
         # herdr reports an omp session (a file path) before any turn, so a session proves nothing.
         "session_proves_primed": False,
         "confirm_submit": True,
-        # Unverified for omp; reading the pane each sweep is the safe side.
+        # herdr reports working while the lane-guard question is open (known-behaviors).
         "status_hides_dialogs": True,
         "input_box": omp_input_box,
+        "exit_trace": r"Resume this session with|omp --resume",
+        "project_config": (".omp/", ".claude/"),
         # Concurrent omp starts and requests did not collide (known-behaviors O9).
         "launch_gap": 0,
         "startup_problem": None,
@@ -1013,9 +1046,16 @@ def cmd_launch(args):
     policy_file = ex["policy"](root, args.change, lane["worktree"], common, args.strict) if ex["policy"] else None
     # An executor that takes its goal at start-up gets it on the first launch only; a relaunched lane that
     # already has its goal (or its commits) is continued with a prompt instead.
+    # omp loads extensions, settings, MCP servers and hooks from the project's .omp/ and .claude/ in its own,
+    # unsandboxed process: a lane that wrote there must not be started again on its own say-so.
+    touched = [p for p in lane_touched(lane["worktree"]) if p.startswith(tuple(ex["project_config"]))]
+    if touched:
+        fail("the lane changed configuration that {} loads outside its sandbox when it starts; review these files "
+             "before starting it again".format(args.executor), change=args.change, files=touched)
     goal_text = None
     if ex["goal_at_launch"] and not already_primed(root, args.change, lane["worktree"], ex, None):
-        goal_text = GOAL_TEXT.format(c=args.change, skill=ex["skill"].format(c=args.change))
+        goal_text = GOAL_TEXT.format(c=args.change, skill=ex["skill"].format(
+            c=args.change, skill_md=apply_skill_md(lane["worktree"])))
     flags = ex["launch_flags"](args.strict, common, policy_file, goal_text)
     model = ex["model"]() if ex["model"] else None
     waited = wait_gap(root, args.executor, "ready_epoch")
@@ -1031,16 +1071,21 @@ def cmd_launch(args):
         while True:
             text = read_pane(name) or read_pane(pane)
             state = ex["pane_state"](text)
-            if state != "unknown" or time.time() > deadline:
+            # A relaunched pane still shows the last frame of the agent that exited before, while the new one,
+            # already listed by herdr, has not drawn yet.
+            stale = state == "exited" and agents_in(herdr_agents(), lane["worktree"])
+            if (state != "unknown" and not stale) or time.time() > deadline:
                 return name, ((data or {}).get("error") or {}).get("code"), text, state
             time.sleep(1)
 
     name, err, text, state = start()
     # A start command that never reached the shell intact leaves no agent and the bare shell in the foreground:
-    # clear what was typed and start once more. An agent that started and then exited is not retried.
+    # clear what was typed and start once more. An agent that started and then exited (it left its resume hint,
+    # and may have worked on the goal) is not retried.
     start_retried = None
     shell, fg = pane_foreground(pane)
-    if state in ("unknown", "exited") and not agents_in(herdr_agents(), lane["worktree"]) and shell and fg == [shell]:
+    if (state in ("unknown", "exited") and not re.search(ex["exit_trace"], text or "")
+            and not agents_in(herdr_agents(), lane["worktree"]) and shell and fg == [shell]):
         run(["herdr", "pane", "send-keys", pane, "ctrl+c"])
         name, err, text, state = start()
         start_retried = "start_not_delivered"
@@ -1126,7 +1171,7 @@ def cmd_prompt(args):
         fail("the pane is not at an idle composer (state: {}); nothing was sent".format(state),
              change=c, pane_tail=pane_tail(text))
 
-    skill = ex["skill"].format(c=c)
+    skill = ex["skill"].format(c=c, skill_md=apply_skill_md(lane["worktree"]))
     waited = 0
     if args.goal or args.plain:
         primed = book_load(root).get("lanes", {}).get(c, {}).get("goal_sent_at")
