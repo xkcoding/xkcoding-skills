@@ -9,7 +9,7 @@ dispatch 目前只能把 change 派给 codex。pi 能用第三方模型（本机
 - 新增入口 `/dispatch:pi`，子命令与 flag 与 `/dispatch:codex` 一致（`<change…>`、`status`、`setup`；`--strict`、`--ready`、`--no-pr`、`--no-loop`）。
 - 执行者成为每条 lane 的属性：从入口命令决定，派发时记下，巡检时按每条 lane 自己的执行者判断。任一入口的 `status` 都覆盖仓库里的全部 lane（两种执行者共用 `<repo>.lanes/` 与 `change/` 前缀，各管各的会互相误判）。
 - 引擎（`lane.py`、`doctor.sh`）改为执行者无关 + 一张执行者适配表；`dispatch/codex/` 与 `dispatch/pi/` 各带一份**逐字节相同**的副本，由仓库内的同步脚本检查，保持两个 skill 目录各自自包含。
-- pi lane 的姿态：bash 走 OS 级沙箱（sandbox-runtime：只可写 lane worktree 与主仓库 `.git`，`.git/hooks` 与 `.git/config` 除外；网络按白名单）；`write` / `edit` 走同一组可写根的路径守卫；沙箱起不来时 bash 拒绝执行而不是裸跑；关闭 MCP。默认越界即拦截并把原因交给模型；`--strict` 下越界改为弹给人批准。没有 yolo。
+- pi lane 的姿态：bash 走 OS 级沙箱（sandbox-runtime：只可写 lane worktree、主仓库 `.git`（`.git/hooks` 与 `.git/config` 除外）与包管理器缓存目录；网络按白名单）；`write` / `edit` 走同一组可写根的路径守卫；沙箱起不来时 bash 拒绝执行而不是裸跑；关闭 MCP。默认越界即拦截并把原因交给模型；`--strict` 下越界改为弹给人批准。没有 yolo。
 - pi lane 的 goal 用固定版本的 `pi-codex-goal`，启动时 `-e npm:pi-codex-goal@<版本>` 加载，不 `pi install`、不写用户的 pi 配置；goal 状态从 herdr 报告的 session 文件里读。
 - pi 的一次性项目信任用 `--approve`（只对本次运行生效，不写 `trust.json`）。
 - 发送 prompt 后确认它真的提交了：文字留在输入框而 lane 没开始工作时补一次回车（实测出现过）。

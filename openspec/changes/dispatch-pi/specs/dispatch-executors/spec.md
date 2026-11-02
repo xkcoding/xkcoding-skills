@@ -45,11 +45,15 @@ The lane mechanics shipped in the `codex` and `pi` skill directories SHALL be id
 - **THEN** the repository's sync check SHALL fail and name the files that differ
 
 ### Requirement: A pi lane's shell runs inside an operating-system sandbox
-Every shell command a pi lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree and the repository's common git directory, excluding that directory's hooks and config. The sandbox SHALL deny reading the user's SSH, cloud and GnuPG credential directories. Outbound network access from the sandbox SHALL be limited to an allowlist of package-registry hosts. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
+Every shell command a pi lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree, the repository's common git directory excluding that directory's hooks and config, and the user's package-manager cache directories. The sandbox SHALL deny reading the user's SSH, cloud and GnuPG credential directories. Outbound network access from the sandbox SHALL be limited to an allowlist of package-registry hosts. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
 
 #### Scenario: Commit from the lane
 - **WHEN** a pi lane runs `git commit` in its worktree
 - **THEN** the commit SHALL succeed
+
+#### Scenario: Installing dependencies
+- **WHEN** a pi lane runs a package install whose registry is on the allowlist
+- **THEN** the install SHALL succeed, writing only to the worktree and the package-manager caches
 
 #### Scenario: Write outside the lane through the shell
 - **WHEN** a pi lane's shell command writes to the main checkout, the home directory, or the common git directory's hooks or config

@@ -336,6 +336,7 @@ PI_GUARD_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "lane-g
 PI_PUBLIC_REGISTRIES = ["npmjs.org", "*.npmjs.org", "registry.npmjs.org", "registry.yarnpkg.com", "pypi.org",
                         "*.pypi.org", "files.pythonhosted.org", "github.com", "*.github.com", "api.github.com",
                         "raw.githubusercontent.com"]
+PI_CACHE_DIRS = [".npm", ".cache"] + (["Library/Caches"] if sys.platform == "darwin" else [])
 PI_RULE = re.compile(r"^\s*─{8,}\s*$")
 PI_WORKING_RULE = re.compile(r"^\s*─+\s+\S+\s+Working\b")
 PI_STATS = re.compile(r"\d+(?:\.\d+)?%/\d+(?:\.\d+)?[KMG]?\b")
@@ -444,7 +445,8 @@ def pi_policy(root, change, worktree, common_git_dir, strict):
     policy = {
         "version": 1,
         "posture": "strict" if strict else "block",
-        "allowWrite": [real(worktree), common_git_dir],
+        # Package-manager caches are writable so a lane can install dependencies (known-behaviors P18).
+        "allowWrite": [real(worktree), common_git_dir] + [os.path.join(home, d) for d in PI_CACHE_DIRS],
         "denyWrite": [os.path.join(common_git_dir, "hooks"), os.path.join(common_git_dir, "config")],
         "denyRead": [os.path.join(home, d) for d in (".ssh", ".aws", ".gnupg")],
         "allowedDomains": domains,

@@ -30,6 +30,7 @@ herdr 0.9.0、pi 1.3.0（goal 轮）/ 1.4.0（沙箱与守卫轮）、pi-codex-g
 | P14 | （源码，pi 1.4.0）`dist/core/auth-storage.js`、`settings-manager.js`、`trust-manager.js` 对 `auth.json` / `settings.json` / `trust.json` 的同步锁都是 proper-lockfile `lockSync`，重试 10 次 × 20ms，约 200ms 拿不到就抛 `ELOCKED`；`auth-storage` 的异步路径另有 30 秒的等待上限 |
 | P15 | （另一会话的实地反馈，2026-10-29）同一时间启动多个 pi，部分进程抢不到全局配置锁、读不到 API key 就退出；启动之间隔 4 秒、只重跑失败的那些即可恢复 |
 | P16 | （2026-11-02，pi 1.4.0，临时 `PI_CODING_AGENT_DIR`、空 `auth.json`）print 模式读不到 key 时打印 `No API key found for the selected model.` 并退出 1；**交互模式不退出**：界面照常就绪，底栏统计行为 `0.0%/0 (auto)`、模型位显示 `unknown`，发 prompt 后输出 `Error: No API key found for the selected model.`，lane 回到空闲 |
+| P18 | （2026-11-02，sandbox-runtime 0.0.26）可写范围只有工作目录时，沙箱里的 `npm install` 失败：npm 要写 `~/.npm` 缓存（报 `sudo chown -R … ~/.npm`），依赖装不上 |
 | P17 | （同上）pi 的项目信任弹层：分隔线之间是 `Trust project folder?`、路径、说明，选项行以 `→ ` 标出高亮项（`Trust` / `Trust parent folder (…)` / `Trust (this session only)` / `Do not trust` / `Do not trust (this session only)`），末行 `↑↓ navigate  enter select  escape/ctrl+c cancel` |
 
 ## Goals / Non-Goals
@@ -80,7 +81,7 @@ herdr agent start <name> --kind pi --pane <p> -- \
 
 `dispatch/pi/scripts/lane-guard/`（`index.ts` + 钉死 `@anthropic-ai/sandbox-runtime` 的 `package.json`）。以官方 sandbox 示例为起点，但：
 
-- 策略只从 `--lane-policy <file>` 读，不读 `<cwd>/.pi/sandbox.json` 或全局 `sandbox.json`（P13 的合并规则会让仓库里的文件改写策略）。策略文件由 `lane.py launch` 生成在 `~/.claude/dispatch/<repo-id>/`，内容：`allowWrite`（worktree、`git rev-parse --git-common-dir`）、`denyWrite`（common dir 下的 `hooks`、`config`）、`denyRead`（`~/.ssh`、`~/.aws`、`~/.gnupg`）、`allowedDomains`、`posture`。
+- 策略只从 `--lane-policy <file>` 读，不读 `<cwd>/.pi/sandbox.json` 或全局 `sandbox.json`（P13 的合并规则会让仓库里的文件改写策略）。策略文件由 `lane.py launch` 生成在 `~/.claude/dispatch/<repo-id>/`，内容：`allowWrite`（worktree、`git rev-parse --git-common-dir`、包管理器缓存 `~/.npm`、`~/.cache`、macOS 的 `~/Library/Caches`——P18，用户选择放行真实缓存而不是给每条 lane 私有缓存）、`denyWrite`（common dir 下的 `hooks`、`config`）、`denyRead`（`~/.ssh`、`~/.aws`、`~/.gnupg`）、`allowedDomains`、`posture`。
 - **fail closed**：策略文件缺失、解析失败或 sandbox 初始化失败时，替换后的 `bash` 与 `user_bash` 直接返回错误，不回落到本地 bash（官方示例在初始化失败时会回落）。
 - `tool_call` 拦 `write` / `edit`（P12 的做法），可写根与沙箱同源；`denyWrite` 同样生效（否则 `edit` 能改 `.git/config`）。默认姿态 `block` + 原因；`--strict` 用 `ctx.ui.confirm` 弹给人。
 - 网络白名单：官方示例的默认公共源（npm、yarn、pypi、github）加 `files.pythonhosted.org`，再加从用户配置读出的包源 host（`npm config get registry`、`pip config get global.index-url`，取得到才加）。本机 npm 源就是 npmmirror，只用公共列表会让 lane 装不了依赖。
@@ -126,6 +127,7 @@ P14 / P15 说明多个 pi 同时启动会在 pi 自己的配置锁上互相挤�
 - [两份引擎副本漂移] → `sync-engine.sh --check` + CLAUDE.md 规范；任务里把它列为验收步骤。
 - [pi-codex-goal 是第三方包，pi 每次启动从 npm 拉] → 钉死版本；拉取失败按启动失败处理（spec 已写）；known-behaviors 记下版本与来源。
 - [sandbox-runtime 是 research preview（0.0.x）] → 钉死版本；fail closed；升级需重跑 P10 那组探针。
+- [lane 能写用户共享的包缓存（P18 后的取舍）] → 只放行缓存目录本身；npm 缓存按内容寻址有完整性校验，pip 缓存没有，被写坏的风险由用户接受。
 - [网络白名单过窄导致 lane 装不了依赖] → 自动并入用户已配的包源；被拒时模型拿到 403，lane 会报阻塞，按现有"上报"路径交给人。
 - [pi 的 confirm 弹层样式未实测，`--strict` 下可能被识别为 `unknown`] → `unknown` 本就不发任何输入；任务里安排一次实测并据此补规则。
 - [pi 进程本身与其他扩展在沙箱外] → 文档如实写明；lane 里关 MCP；确认页的姿态句不夸大。
