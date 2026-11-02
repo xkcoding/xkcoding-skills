@@ -10,7 +10,7 @@ Exit code: 0 = done, 1 = refused or failed (see "error"), 2 = usage.
 
   plan [<change> ...] [--executor E]   which changes can be dispatched, and under which names (read-only)
   create <change> --executor E         worktree + lane branch; an uncommitted change becomes its first commit
-  launch <change> --executor E [--strict]
+  launch <change> --executor E [--strict] [--reviewed-config]
                                 start the executor in the lane's pane; report ready / dialog / exited
   prompt <change> --goal|--plain|--continue|--resume|--correct TEXT
                                 send one prompt, after checking identity and that no dialog is parked
@@ -264,12 +264,13 @@ def lane_commits(worktree):
 
 
 def lane_touched(worktree):
-    """Paths changed by the lane's own commits or still uncommitted in its worktree."""
+    """Paths changed by the lane's own commits or present but uncommitted in its worktree, ignored ones included."""
     refs = git_out(["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"], worktree).splitlines()
     others = [r for r in refs if "/" + LANE_BRANCH_PREFIX not in r + "/" and not r.endswith("/HEAD")]
     paths = git_out(["log", "--name-only", "--format=", "HEAD", "--not"] + others, worktree).splitlines()
-    paths += [ln[3:].split(" -> ")[-1] for ln in git_out(["status", "--porcelain", "--untracked-files=all"],
-                                                         worktree).splitlines() if len(ln) > 3]
+    for extra in (["--untracked-files=all"], ["--untracked-files=normal", "--ignored=matching"]):
+        paths += [ln[3:].split(" -> ")[-1] for ln in git_out(["status", "--porcelain"] + extra,
+                                                             worktree).splitlines() if len(ln) > 3]
     return sorted({p.strip('"') for p in paths if p.strip()})
 
 
@@ -471,11 +472,12 @@ def guard_policy(root, change, worktree, common_git_dir, strict):
         "env": {"pnpm_config_store_dir": store, "npm_config_store_dir": store},
         # The lane commits, but must never redirect git: whoever can rewrite a .git pointer, a commondir, a gitdir
         # or a config runs code in the next git command outside the sandbox. So of the shared git directory only
-        # what a commit writes is writable (objects, refs, reflogs, LFS objects) plus this lane's own admin
+        # what a commit writes is writable (objects, refs, packed refs, reflogs, LFS objects) plus this lane's own admin
         # directory minus the files that point git elsewhere; the main checkout's and other lanes' admin files
         # stay out of reach.
         "allowWrite": [real(worktree), tmp_dir]
-                      + [os.path.join(common_git_dir, d) for d in ("objects", "refs", "logs", "lfs")] + [admin]
+                      + [os.path.join(common_git_dir, d) for d in
+                         ("objects", "refs", "logs", "lfs", "reftable", "packed-refs", "packed-refs.lock")] + [admin]
                       + [d for i, d in enumerate(caches) if d not in caches[:i]],
         "denyWrite": [os.path.join(real(worktree), ".git")]
                      + [os.path.join(admin, f) for f in ("commondir", "gitdir", "config.worktree")],
@@ -640,7 +642,8 @@ EXECUTORS = {
         "status_hides_dialogs": True,
         "input_box": omp_input_box,
         "exit_trace": r"Resume this session with|omp --resume",
-        "project_config": (".omp/", ".claude/"),
+        # Read at start-up by omp itself (discovery/): extensions, settings, hooks and MCP servers.
+        "project_config": (".omp", ".claude", "mcp.json", ".mcp.json", ".vscode", ".cursor", ".codex", ".gemini"),
         # Concurrent omp starts and requests did not collide (known-behaviors O9).
         "launch_gap": 0,
         "startup_problem": None,
@@ -1048,10 +1051,13 @@ def cmd_launch(args):
     # already has its goal (or its commits) is continued with a prompt instead.
     # omp loads extensions, settings, MCP servers and hooks from the project's .omp/ and .claude/ in its own,
     # unsandboxed process: a lane that wrote there must not be started again on its own say-so.
-    touched = [p for p in lane_touched(lane["worktree"]) if p.startswith(tuple(ex["project_config"]))]
-    if touched:
-        fail("the lane changed configuration that {} loads outside its sandbox when it starts; review these files "
-             "before starting it again".format(args.executor), change=args.change, files=touched)
+    # Compared case-insensitively: omp finds .Claude on a case-insensitive disk.
+    touched = [p for p in lane_touched(lane["worktree"])
+               if any(p.lower().rstrip("/") == n or p.lower().startswith(n + "/") for n in ex["project_config"])]
+    if touched and not args.reviewed_config:
+        fail("the lane changed configuration that {} loads outside its sandbox when it starts; a human reviews these "
+             "files, then launch again with --reviewed-config".format(args.executor), change=args.change,
+             files=touched)
     goal_text = None
     if ex["goal_at_launch"] and not already_primed(root, args.change, lane["worktree"], ex, None):
         goal_text = GOAL_TEXT.format(c=args.change, skill=ex["skill"].format(
@@ -1537,6 +1543,7 @@ def main():
     p.add_argument("--executor", choices=executors)
     p = sub.add_parser("create"); p.add_argument("change"); p.add_argument("--executor", choices=executors, required=True)
     p = sub.add_parser("launch"); p.add_argument("change"); p.add_argument("--strict", action="store_true")
+    p.add_argument("--reviewed-config", action="store_true")
     p.add_argument("--executor", choices=executors, required=True)
     p = sub.add_parser("prompt"); p.add_argument("change")
     g = p.add_mutually_exclusive_group(required=True)
