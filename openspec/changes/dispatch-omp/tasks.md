@@ -22,9 +22,9 @@
 
 ## 3. skill 与参考文档
 
-- [ ] 3.1 `dispatch/omp/SKILL.md`：由 pi 版改写，入口 `/dispatch:omp`，所有脚本调用带 `--executor omp`；派发流程去掉"逐个错开 / 无模型重启 / 单独下达 goal"，改为"launch 即下达 goal"；姿态句写明沙箱 + 守卫 + 工具白名单，以及 `--approval-mode yolo` 的含义；巡检表加 `goal_dropped`，去掉只属于 pi 的说明；codex 的 SKILL.md 把 pi 换成 omp、版本 0.3.0；验证：`python3 skill-craft/scripts/check.py dispatch/omp` 与 `dispatch/codex` 无 flags，两份 SKILL.md 里 grep 不到 `pi-codex-goal`、`/dispatch:pi`
-- [ ] 3.2 `dispatch/omp/references/setup.md`：安装 omp（bun）、`omp login` 与选默认模型由用户自己做、`herdr integration install omp` 由用户自己做、征得同意后 `npm ci` 装 lane-guard 依赖、`openspec init --tools oh-my-pi` 并提交；验证：按文档对本机逐项跑 doctor，每个缺失项都对得上文档里的命令
-- [ ] 3.3 `dispatch/omp/references/known-behaviors.md`：design 的 O1–O12 逐条带日期与版本；lane-guard 的沙箱事实（git 指针、包管理器、禁读、fail closed）从 pi 版移过来并注明当时测于 pi、本次在 omp 上复测的项；未验证项单列；验证：每条已验证事实都有日期与版本
+- [x] 3.1 `dispatch/omp/SKILL.md`：由 pi 版改写，入口 `/dispatch:omp`，所有脚本调用带 `--executor omp`；派发流程去掉"逐个错开 / 无模型重启 / 单独下达 goal"，改为"launch 即下达 goal"；姿态句写明沙箱 + 守卫 + 工具白名单，以及 `--approval-mode yolo` 的含义；巡检表加 `goal_dropped`，去掉只属于 pi 的说明；codex 的 SKILL.md 把 pi 换成 omp、版本 0.3.0；验证：`python3 skill-craft/scripts/check.py dispatch/omp` 与 `dispatch/codex` 无 flags，两份 SKILL.md 里 grep 不到 `pi-codex-goal`、`/dispatch:pi`
+- [x] 3.2 `dispatch/omp/references/setup.md`：安装 omp（bun）、`omp login` 与选默认模型由用户自己做、`herdr integration install omp` 由用户自己做、征得同意后 `npm ci` 装 lane-guard 依赖、`openspec init --tools oh-my-pi` 并提交；验证：按文档对本机逐项跑 doctor，每个缺失项都对得上文档里的命令
+- [x] 3.3 `dispatch/omp/references/known-behaviors.md`：design 的 O1–O12 逐条带日期与版本；lane-guard 的沙箱事实（git 指针、包管理器、禁读、fail closed）从 pi 版移过来并注明当时测于 pi、本次在 omp 上复测的项；未验证项单列；验证：每条已验证事实都有日期与版本
 
 ## 4. 真跑验收（`/tmp` 一次性仓库 + herdr）
 
