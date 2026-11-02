@@ -41,11 +41,12 @@
     },
     {
       "name": "dispatch",
-      "description": "Dispatch OpenSpec changes to codex lanes in herdr worktrees — OpenSpec tracks the progress, the orchestrator verifies and opens the pull request",
+      "description": "Dispatch OpenSpec changes to codex or pi lanes in herdr worktrees — OpenSpec tracks the progress, the orchestrator verifies and opens the pull request",
       "source": "./",
       "strict": false,
       "skills": [
-        "./dispatch/codex"
+        "./dispatch/codex",
+        "./dispatch/pi"
       ]
     },
     {
