@@ -78,15 +78,15 @@
 - `dispatch/codex/scripts/lane.py` — lane 的全部机械操作（plan / create / launch / prompt / list / record-verify / publish / forge / note），纯 Python 标准库，每个子命令输出一个 JSON
 - `dispatch/codex/references/` — `setup.md`（安装与上手引导）、`known-behaviors.md`（带日期与版本的 herdr / codex / openspec 行为记录）
 
-### dispatch:pi（MVP）
+### dispatch:omp（MVP）
 
-`/dispatch:pi`：与 `dispatch:codex` 同一套流程，执行者换成 pi（模型与凭据用 pi 自己的配置，可接 GLM 等第三方模型）。pi 自身没有沙箱，lane 的边界由随 skill 发布的 lane-guard 扩展给出：shell 在 sandbox-runtime 里（只可写 lane worktree、主仓库 `.git`——`hooks` / `config` 除外——、各包管理器缓存与 lane 私有临时目录；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源；不走代理的工具由 lane-guard 在沙箱里配好；沙箱起不来就拒绝），`write` / `edit` 越界即拦（`--strict` 下问人，默认拒绝）。goal 用固定版本的 `pi-codex-goal`，启动时 `-e` 加载，不改用户的 pi 配置。多条 pi lane 逐条启动、彼此错开（pi 的配置锁会让同时启动的进程读不到模型）。仅 macOS / Linux。
+`/dispatch:omp`：与 `dispatch:codex` 同一套流程，执行者换成 omp（oh-my-pi；模型与凭据用 omp 自己的配置，可接 GLM 等第三方模型）。取代了已退役的 `/dispatch:pi`（旧 pi lane 显示为 `unknown_executor`，巡检不碰，由人原地收尾）。omp 自身没有 OS 沙箱，lane 的边界由三样东西给出：随 skill 发布的 lane-guard 扩展（omp 经 pi 兼容层加载）把 shell 放进 sandbox-runtime（只可写 lane worktree、主仓库 `.git` 里 commit 要写的部分与本 lane 的管理目录、各包管理器缓存与 lane 私有临时目录；凭据目录禁读；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源；沙箱起不来就拒绝）；守卫拦 `write` / `edit` 越界（多文件 / 移动 / 改名逐个查，软链逐段解析）与任何带 scheme 的目标，`read` 一次只收一个普通路径（goal 直接写 apply skill 的路径）（`--strict` 下越界写问人，默认拒绝）；工具白名单 `--tools read,bash,edit,write,goal` 加 `--no-pty --no-lsp`。`--approval-mode yolo` 只关掉 omp 自己的问人环节。goal 随启动参数 `--goal` 下达，omp 没有配置锁，多条 lane 不用错开。omp 会在沙箱外拉起配置里的 MCP server、加载项目扩展（含仓库自带的 `.omp/`），lane 里调用不到 MCP 工具；lane 自己改了 `.omp/` 或 `.claude/` 后 `launch` 拒绝再启动。仅 macOS / Linux。
 
 **结构**（单个自包含 skill）：
-- `dispatch/pi/SKILL.md` — 与 codex 的 SKILL.md 同构，执行者相关处按 pi 写
-- `dispatch/pi/scripts/lane.py`、`doctor.sh` — 与 `dispatch/codex/scripts/` 下的**逐字节相同**（引擎执行者无关，执行者相关的都在 `lane.py` 的 `EXECUTORS` 表里；任一入口的 `status` 都管全部 lane）
-- `dispatch/pi/scripts/lane-guard/` — pi 扩展（`index.ts`）与钉死的 `@anthropic-ai/sandbox-runtime` 依赖（`package-lock.json` 随仓库，`node_modules/` 由 setup 征得同意后 `npm ci`）
-- `dispatch/pi/references/` — `setup.md`、`known-behaviors.md`（带日期与版本的 herdr / pi / pi-codex-goal / lane-guard 行为）
+- `dispatch/omp/SKILL.md` — 与 codex 的 SKILL.md 同构，执行者相关处按 omp 写
+- `dispatch/omp/scripts/lane.py`、`doctor.sh` — 与 `dispatch/codex/scripts/` 下的**逐字节相同**（引擎执行者无关，执行者相关的都在 `lane.py` 的 `EXECUTORS` 表里；任一入口的 `status` 都管全部 lane）
+- `dispatch/omp/scripts/lane-guard/` — 扩展（`index.ts`）与钉死的 `@anthropic-ai/sandbox-runtime` 依赖（`package-lock.json` 随仓库，`node_modules/` 由 setup 征得同意后 `npm ci`）
+- `dispatch/omp/references/` — `setup.md`、`known-behaviors.md`（带日期与版本的 herdr / omp / lane-guard 行为）
 
 **写 skill 的品味标杆**：本机的 web-access 与 baoyu-skills——确定性的活进脚本、目录自包含、原则先行且精简、skill 文本里不出现开发过程的编号。
 

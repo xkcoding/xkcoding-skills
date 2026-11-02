@@ -12,14 +12,14 @@
 | [skill-craft](skill-craft/) | 写 skill，以及诊断、改造、体检写坏的 skill 和 prompt | Stable |
 | [autoresearch](autoresearch/) | 把一个可度量的目标交给会话之外的循环：每轮一个无状态 agent，打分器决定留下还是 revert，一份报告看全部轮次 | MVP |
 | [dispatch:codex](dispatch/) | 把已 propose 的 OpenSpec change 派发给 codex：每个 change 一条 herdr worktree lane，进度由 OpenSpec 管，调度者验收后开评审请求（PR / MR，不绑定 GitHub） | MVP |
-| [dispatch:pi](dispatch/) | 同上，执行者换成 pi（模型用 pi 自己的配置，可接 GLM 等第三方模型）；lane 的 shell 跑在 OS 沙箱里，文件写入限定在 lane 内 | MVP |
+| [dispatch:omp](dispatch/) | 同上，执行者换成 omp（oh-my-pi，模型用 omp 自己的配置，可接 GLM 等第三方模型）；lane 的 shell 跑在 OS 沙箱里，文件读写限定在 lane 内，只开五个工具 | MVP |
 
 ## 前置要求
 
 - Python 3（标准库，无外部依赖）
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI 已安装
 - Node.js ≥ 18（仅 `md-image-rehost` 需要；首次使用前在该 Skill 目录执行 `npm install`）
-- [herdr](https://herdr.dev)、[OpenSpec](https://github.com/Fission-AI/OpenSpec) CLI，加上 codex CLI（`dispatch:codex`）或 pi + Node.js ≥ 24 + ripgrep（`dispatch:pi`，仅 macOS / Linux）；`/dispatch:codex setup`、`/dispatch:pi setup` 会逐项检测并在征得同意后协助安装
+- [herdr](https://herdr.dev)、[OpenSpec](https://github.com/Fission-AI/OpenSpec) CLI，加上 codex CLI（`dispatch:codex`）或 omp + npm + ripgrep（`dispatch:omp`，仅 macOS / Linux）；`/dispatch:codex setup`、`/dispatch:omp setup` 会逐项检测并在征得同意后协助安装
 - git ≥ 2.23 与 `claude` / `codex` / `pi` / `goose` CLI 之一（仅 `autoresearch` 需要；第三方模型用 `pi` 或 `goose`；`/autoresearch doctor` 逐项检测，只报告不安装）
 
 ## 安装
@@ -51,7 +51,7 @@
 | **productivity-skills** | 效能技能 — 洞察、复盘、工作流优化 | [session-insights](session-insights/)、[skill-craft](skill-craft/) |
 | **design-skills** | 设计与编辑技能 — 视觉美学、内容转网页 | [dark-luxury-editorial](dark-luxury-editorial/) |
 | **autoresearch** | 自驱研究 — 会话之外的多轮改进循环，打分器驱动 | [autoresearch](autoresearch/) |
-| **dispatch** | 派发技能 — 把 OpenSpec change 交给外部 agent 在隔离 worktree 里执行 | [codex](dispatch/)（`/dispatch:codex`）、[pi](dispatch/)（`/dispatch:pi`） |
+| **dispatch** | 派发技能 — 把 OpenSpec change 交给外部 agent 在隔离 worktree 里执行 | [codex](dispatch/)（`/dispatch:codex`）、[omp](dispatch/)（`/dispatch:omp`） |
 
 也可以直接告诉 Claude Code：
 
@@ -155,10 +155,10 @@ xkcoding-skills/
 │   │   ├── SKILL.md             # Skill 入口（Agent 指令）
 │   │   ├── scripts/             # doctor.sh（环境体检）+ lane.py（lane 的全部机械操作，两种执行者共用）
 │   │   └── references/          # setup 引导、herdr/codex/openspec 已知行为
-│   └── pi/                      # Skill: /dispatch:pi（自包含）
+│   └── omp/                     # Skill: /dispatch:omp（自包含）
 │       ├── SKILL.md             # Skill 入口（Agent 指令）
-│       ├── scripts/             # 与 codex 逐字节相同的 doctor.sh / lane.py + lane-guard/（pi 扩展：OS 沙箱 + 写入守卫）
-│       └── references/          # setup 引导、herdr/pi/lane-guard 已知行为
+│       ├── scripts/             # 与 codex 逐字节相同的 doctor.sh / lane.py + lane-guard/（omp 经 pi 兼容层加载的扩展：OS 沙箱 + 读写守卫）
+│       └── references/          # setup 引导、herdr/omp/lane-guard 已知行为
 │
 └── openspec/                    # OpenSpec 变更管理
     └── changes/

@@ -84,21 +84,6 @@ When a lane is blocked on an approval request, the supervisor SHALL report the r
 - **WHEN** a lane under the strict posture shows an approval request
 - **THEN** the supervisor SHALL surface the quoted request and leave the lane untouched
 
-### Requirement: A parked goal is resumed only when nobody parked it on purpose
-When the lane's executor reports its goal as limited by usage, the supervisor SHALL resume it at most once per sweep. When the goal is paused and the supervisor has no record of pausing it, or when the goal is blocked or limited by a budget, the supervisor SHALL escalate and SHALL NOT resume it. Goal states that an executor does not report SHALL NOT be inferred from the pane.
-
-#### Scenario: Usage limit hit
-- **WHEN** a lane's goal is reported as usage-limited
-- **THEN** the supervisor SHALL send one resume in that sweep and re-evaluate on the next sweep
-
-#### Scenario: Goal paused by an unknown hand
-- **WHEN** a lane's goal is paused and no pause is recorded for it
-- **THEN** the supervisor SHALL NOT resume it and SHALL report the lane as waiting on the user
-
-#### Scenario: Pi goal blocked
-- **WHEN** a pi lane's goal is reported as blocked
-- **THEN** the supervisor SHALL escalate the lane with the recorded reason and SHALL NOT resume it
-
 ### Requirement: Supervision recurs until every lane is settled
 After a dispatch, unless `--no-loop` was given, a recurring sweep SHALL be armed and the user SHALL be told how to stop it. The recurrence SHALL end when every lane is published, failed, paused by the user, or waiting on the user. Invoking the status sub-command in a session without an armed recurrence SHALL re-arm it while unsettled lanes remain.
 
@@ -109,3 +94,18 @@ After a dispatch, unless `--no-loop` was given, a recurring sweep SHALL be armed
 #### Scenario: All lanes settled
 - **WHEN** a sweep finds every lane published, failed, paused by the user or waiting on the user
 - **THEN** the recurrence SHALL stop and the user SHALL be told which lanes wait on what
+
+### Requirement: A parked goal is resumed only when nobody parked it deliberately
+When the lane's executor reports its goal as limited by usage, the supervisor SHALL resume it at most once per sweep. When the goal is paused and the supervisor has no record of pausing it, or when the goal is blocked or limited by a budget, the supervisor SHALL escalate and SHALL NOT resume it. Goal states that an executor does not report SHALL NOT be inferred from the pane.
+
+#### Scenario: Usage limit hit
+- **WHEN** a lane's goal is reported as usage-limited
+- **THEN** the supervisor SHALL send one resume in that sweep and re-evaluate on the next sweep
+
+#### Scenario: Goal paused by an unknown hand
+- **WHEN** a lane's goal is paused and no pause is recorded for it
+- **THEN** the supervisor SHALL NOT resume it and SHALL report the lane as waiting on the user
+
+#### Scenario: omp goal blocked
+- **WHEN** an omp lane's goal is reported as blocked
+- **THEN** the supervisor SHALL escalate the lane with the recorded reason and SHALL NOT resume it

@@ -6,14 +6,14 @@ description: >-
 argument-hint: '[<change> …] [--strict] [--ready] [--no-pr] [--no-loop] | status | setup'
 metadata:
   author: xkcoding
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # /dispatch:codex
 
 把已经 propose 好的 OpenSpec change 交给 codex 去做：每个 change 一条 lane——一个独立的 git worktree、一个分支、一个 codex——lane 里跑的就是标准的 OpenSpec apply。你是**调度者**：不写一行实现，只负责派发、盯进度、亲手验收、把验证过的分支 push 出去并开评审请求（PR / MR）。
 
-`/opsx:apply` = 我在这里做；`/dispatch:codex` = 派给 codex 做；`/dispatch:pi` = 派给 pi 做。同一个仓库里每个 change 各选各的；任一入口的 `status` 都管仓库里**全部** lane，并按每条 lane 自己的执行者判断。
+`/opsx:apply` = 我在这里做；`/dispatch:codex` = 派给 codex 做；`/dispatch:omp` = 派给 omp（oh-my-pi）做。同一个仓库里每个 change 各选各的；任一入口的 `status` 都管仓库里**全部** lane，并按每条 lane 自己的执行者判断。
 
 用用户的语言回复；commit、评审请求用英文。
 
@@ -70,7 +70,7 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/lane.py" <子命令> …
 | `create <change> --executor codex` | 建 worktree 与 `change/<change>` 分支；change 还没提交时，把它搬进 worktree 成为该分支的首个 commit。base 分支不会被动 |
 | `launch <change> --executor codex [--strict]` | 在 lane 的 pane 里启动 codex；返回 `state`：`ready` / `dialog` / `exited` / `unknown`，附 `pane_tail` |
 | `prompt <change> --goal \| --plain \| --continue \| --resume \| --correct "<text>"` | 发一条 prompt。发之前自动确认身份、确认 lane 空闲、确认没有弹层；goal 只会发出一次 |
-| `list [--table]` | 所有 lane（含 pi 的）的总览、执行者与 `verdict`。`--table` 每条 lane 一行，给人看 |
+| `list [--table]` | 所有 lane（含 omp 的）的总览、执行者与 `verdict`。`--table` 每条 lane 一行，给人看 |
 | `record-verify <change>` | 从 stdin 的 JSON 写 `verify.md` 并提交到 lane 分支 |
 | `publish <change> --title "<t>" [--body-file F] [--ready] [--no-pr] [--via gh\|glab\|handoff] [--ack-remote]` | 检查越界 push → 显式 refspec push → 能自己开评审请求就开（或复用已有的），否则交出 `handoff` |
 | `forge [--set gh\|glab\|handoff\|none [--tool NAME]] [--forget]` | 这个远端的 host 用什么开评审请求；选择按 host 记住 |
@@ -107,7 +107,7 @@ push 是纯 git，任何托管都一样；**只有"开评审请求"取决于代�
 
 ## 巡检
 
-`list`（给用户看用 `--table`），然后按每条 lane 的 `verdict` 处理。无变化的 lane 不要去读 pane——巡检会跑很多次，省着用上下文。总览里也会出现 pi 的 lane：按同一张表处理，但往 pi lane 发东西、处理它的弹层时，按 `/dispatch:pi` 的规则来。
+`list`（给用户看用 `--table`），然后按每条 lane 的 `verdict` 处理。无变化的 lane 不要去读 pane——巡检会跑很多次，省着用上下文。总览里也会出现 omp 的 lane：按同一张表处理，但往 omp lane 发东西、处理它的弹层时，按 `/dispatch:omp` 的规则来（omp lane 的 goal 在 launch 时已下达，不发 `--goal`）。
 
 | verdict | 做什么 |
 |---|---|
@@ -118,10 +118,10 @@ push 是纯 git，任何托管都一样；**只有"开评审请求"取决于代�
 | `idle_unfinished` | 先读 pane。lane 在提问或报告阻塞 → 把原话交给用户并 `note … escalate`，不续跑。只是停了 → `prompt --continue`。`nudges_without_progress` ≥ 2 → 不再续跑，上报 |
 | `blocked` | 读 pane，把请求原文交给用户。**不代答审批。** 启动期那类弹层按「先看再动」处理 |
 | `goal_usage_limited` | 账号限流。`prompt --resume`，每次巡检最多一次；下次巡检再看 |
-| `goal_paused` / `goal_blocked` / `goal_budget_limited` | 上报，不恢复：暂停多半是用户自己按的；`blocked` 是 codex 连续多个 turn 确认过的阻塞 |
+| `goal_paused` / `goal_blocked` / `goal_budget_limited` / `goal_dropped` | 上报，不恢复：暂停多半是用户自己按的；`blocked` 是 codex 连续多个 turn 确认过的阻塞 |
 | `lane_pushed_itself` | lane 越界了。上报；用户明确接受之后才 `publish --ack-remote` |
 | `no_agent` | 刚 `create` 完还没启动 → `launch`。否则 codex 已退出 → 上报，由用户决定重新派发还是进 worktree 原地 `/opsx:apply` |
-| `unknown_executor` | lane 里的 agent 不是 codex 或 pi，或没有 agent 也没有记录。不碰，上报 |
+| `unknown_executor` | lane 里的 agent 不是 codex 或 omp（包括已退役的 pi 留下的 lane），或没有 agent 也没有记录。不碰，上报 |
 | `ambiguous_agent` | 同一个 worktree 里不止一个 agent。不碰，上报 |
 | `awaiting_user` | 已上报过，一行带过；用户答复后 `note … clear` |
 | `herdr_unreachable` | herdr 连不上（多半是当前会话不在 herdr pane 里）。进度照常报告，但不操纵任何 lane；请用户回到 herdr pane 里再执行 |

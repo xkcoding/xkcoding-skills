@@ -11,7 +11,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source_dir="$here/codex/scripts"
-targets=("$here/pi/scripts")
+targets=("$here/omp/scripts")
 files=(lane.py doctor.sh)
 
 check=false
