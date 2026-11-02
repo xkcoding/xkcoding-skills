@@ -15,10 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **dispatch:omp**（新 Skill，`dispatch` 插件）：`/dispatch:omp` 把已 propose 的 OpenSpec change 派发给 omp（oh-my-pi），流程与 `/dispatch:codex` 相同
   - goal 随启动参数 `--goal` 下达，omp 一启动就开工；goal 状态从 omp 的 session 读（新增 `goal_dropped` 判定，与暂停一样只上报不恢复）；omp 没有配置锁，多条 lane 不用错开
-  - lane 的边界：lane-guard（从 pi 版迁来，omp 经 pi 兼容层加载）的 OS 沙箱与写入守卫照旧；`read` 只放行普通路径与 `skill://`，网址与 omp 的内部 URI 一律拦下（omp 的 `read` 本来能在沙箱外联网）；任何 `协议://` 写入也拦，`xd://` 设备与 MCP 工具因此调用不到；工具白名单 `read,bash,edit,write,goal` 加 `--no-pty --no-lsp`；`--approval-mode yolo` 只关掉 omp 自己的问人环节
+  - lane 的边界：lane-guard（从 pi 版迁来，omp 经 pi 兼容层加载）的 OS 沙箱与写入守卫照旧；`read` 一次只收一个普通路径，网址、omp 的内部 URI（含 `skill://`，goal 改为直接写 apply skill 的路径）、无 `//` 的 scheme 与 `;` / `,` 列表一律拦下（omp 的 `read` 本来能在沙箱外联网、会修复 `https:/` 并拆开列表）；任何 `协议://` 写入也拦，`xd://` 设备与 MCP 工具因此调用不到；工具白名单 `read,bash,edit,write,goal` 加 `--no-pty --no-lsp`；`--approval-mode yolo` 只关掉 omp 自己的问人环节
   - omp 仍会在沙箱外拉起配置里的 MCP server，包括被派发仓库自带的 `.omp/mcp.json`——文档写明，派发不信任的仓库前先看一眼
   - `launch` 先等 pane 前台只剩 shell 再启动，启动命令没送达（没有 agent、前台是 shell）时清掉输入重试一次；返回时 omp 已在工作也算启动成功；记录 omp 的默认模型，`verify.md` 与评审正文写 omp 版本与模型
   - omp 退出后留在 pane 上的最后一帧判为 `exited`；`--strict` 的询问框（`↑/↓ navigate`）判为 `blocked`
+  - 审查后加固（omp 与守卫）：`edit` 按它点名的每个文件检查（多文件补丁、`MV`、`*** Move to:`、`rename`），认不出目标就拒绝；写入目标的软链逐段解析，经悬空软链写到 lane 外会被拦；lane 改了 `.omp/` 或 `.claude/` 后 `launch` 拒绝再启动（omp 会在沙箱外加载那里的扩展与 hooks）；默认模型改读 `omp config get --json`，不受 `FORCE_COLOR` 影响
+  - 审查后加固（沙箱，对 codex 无影响）：公共 `.git` 只放行 `objects`、`refs`、`logs`、`lfs` 与本 lane 的管理目录——此前主仓库的 `commondir` 与其他 lane 的管理文件可写，能让沙箱外的 git 执行任意配置；禁读名单加上 docker、kube、netrc、gh、glab、gcloud、azure、codex、omp 的凭据位置
+  - `launch` 的重试只针对启动命令没送达：agent 起来过再退出（留下 resume 提示）不重试；重新启动时 pane 上残留的上一帧不再被当成新 agent 已退出
   - `doctor.sh --executor omp`：omp 版本、默认模型及其是否可用、herdr 的 omp 集成、仓库是否提交了 apply skill（`.omp` / `.agents` / `.claude` 任一处）
 
 - **dispatch:pi**（新 Skill，`dispatch` 插件）：`/dispatch:pi` 把已 propose 的 OpenSpec change 派发给 pi，流程与 `/dispatch:codex` 相同（派发 → 巡检 → 亲手验收 → `verify.md` → push → draft 评审请求）

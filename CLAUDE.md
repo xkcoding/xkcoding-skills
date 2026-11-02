@@ -80,7 +80,7 @@
 
 ### dispatch:omp（MVP）
 
-`/dispatch:omp`：与 `dispatch:codex` 同一套流程，执行者换成 omp（oh-my-pi；模型与凭据用 omp 自己的配置，可接 GLM 等第三方模型）。取代了已退役的 `/dispatch:pi`（旧 pi lane 显示为 `unknown_executor`，巡检不碰，由人原地收尾）。omp 自身没有 OS 沙箱，lane 的边界由三样东西给出：随 skill 发布的 lane-guard 扩展（omp 经 pi 兼容层加载）把 shell 放进 sandbox-runtime（只可写 lane worktree、主仓库 `.git`——`hooks` / `config` 除外——、各包管理器缓存与 lane 私有临时目录；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源；沙箱起不来就拒绝）；守卫拦 `write` / `edit` 越界与任何 `协议://` 写入，`read` 只放行普通路径与 `skill://`（`--strict` 下越界写问人，默认拒绝）；工具白名单 `--tools read,bash,edit,write,goal` 加 `--no-pty --no-lsp`。`--approval-mode yolo` 只关掉 omp 自己的问人环节。goal 随启动参数 `--goal` 下达，omp 没有配置锁，多条 lane 不用错开。omp 会在沙箱外拉起配置里的 MCP server（含仓库自带的 `.omp/mcp.json`），lane 里调用不到它们。仅 macOS / Linux。
+`/dispatch:omp`：与 `dispatch:codex` 同一套流程，执行者换成 omp（oh-my-pi；模型与凭据用 omp 自己的配置，可接 GLM 等第三方模型）。取代了已退役的 `/dispatch:pi`（旧 pi lane 显示为 `unknown_executor`，巡检不碰，由人原地收尾）。omp 自身没有 OS 沙箱，lane 的边界由三样东西给出：随 skill 发布的 lane-guard 扩展（omp 经 pi 兼容层加载）把 shell 放进 sandbox-runtime（只可写 lane worktree、主仓库 `.git` 里 commit 要写的部分与本 lane 的管理目录、各包管理器缓存与 lane 私有临时目录；凭据目录禁读；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源；沙箱起不来就拒绝）；守卫拦 `write` / `edit` 越界（多文件 / 移动 / 改名逐个查，软链逐段解析）与任何带 scheme 的目标，`read` 一次只收一个普通路径（goal 直接写 apply skill 的路径）（`--strict` 下越界写问人，默认拒绝）；工具白名单 `--tools read,bash,edit,write,goal` 加 `--no-pty --no-lsp`。`--approval-mode yolo` 只关掉 omp 自己的问人环节。goal 随启动参数 `--goal` 下达，omp 没有配置锁，多条 lane 不用错开。omp 会在沙箱外拉起配置里的 MCP server、加载项目扩展（含仓库自带的 `.omp/`），lane 里调用不到 MCP 工具；lane 自己改了 `.omp/` 或 `.claude/` 后 `launch` 拒绝再启动。仅 macOS / Linux。
 
 **结构**（单个自包含 skill）：
 - `dispatch/omp/SKILL.md` — 与 codex 的 SKILL.md 同构，执行者相关处按 omp 写

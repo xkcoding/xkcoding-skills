@@ -6,10 +6,10 @@
 
 - (2026-11-02, omp 18.15.0) omp 跑在 bun 上（`#!/usr/bin/env bun`，`engines.bun >= 1.4.4`），用 `bun install -g @oh-my-pi/pi-coding-agent` 安装；配置、凭据、session 都在 `~/.omp/agent/`，凭据在 SQLite（`agent.db`）里。
 - (2026-11-02, omp 18.15.0) `herdr agent start --kind omp --pane <p> -- --tools read,bash,edit,write,goal --no-pty --no-lsp -e <lane-guard> --lane-policy <file> --goal "<goal 文本>"`：omp 画出界面即开工，不需要再发 prompt；没有项目信任框。2 task 的 change 76 秒、约 1.36 万 token（glm-5.3），每 task 一个含 `tasks.md` 勾选的 commit。
-- (2026-11-02, omp 18.15.0) omp 读 skill 走 `read skill://openspec-apply-change`；发现 `.omp/skills`、`.agents/skills`、`.claude/skills` 三处。
+- (2026-11-02, omp 18.15.0) omp 读 skill 走 `read skill://openspec-apply-change`；发现 `.omp/skills`、`.agents/skills`、`.claude/skills` 三处。`skill://` 在 omp 进程里解析、跟随软链，所以守卫拦它，goal 里直接写 SKILL.md 的路径；实测模型先试 `skill://` 被拦，随即按路径读到，lane 照常完成。
 - (2026-11-02, omp 18.15.0) goal 状态在 session JSONL：`type:"mode_change"` 行的 `data.goal`（`id`、`objective`、`status`、`tokensUsed`、`timeUsedSeconds`、`createdAt`、`updatedAt`）；`status` 取值 `active` / `paused` / `complete` / `budget-limited` / `dropped`（源码）。完成时另有 `type:"custom"`、`customType:"goal-completed"`；完成后还有 `data.goal` 为 null 的 `mode_change`。实测只见过 `active` 与 `complete`。
 - (2026-11-02, omp 18.15.0) 不传 `--tools` 时模型可用 `read, bash, edit, eval, glob, grep, task, wait, todo, web_search, write` 及 `xd://ast_edit`、`xd://debug`。其中 `web_search` 在 omp 进程里联网；`glob` 不在守卫名单；`xd://ast_edit` 绕过 write / edit 守卫；`task` 子代理加载了 lane-guard 却没有 `--lane-policy`，靠"无策略即拒绝"才没漏。传 `--tools read,bash,edit,write`（加 `goal`）后只剩这几个。
-- (2026-11-02, omp 18.15.0) `read` 支持 `http(s)://`、`www.` 与内部 URI（`agent artifact attachment cfg conflict history issue local mcp memory mr omp out pr proc rule security skill ssh vault xd`），都在 omp 进程里执行。实测 `read https://example.com` 取回网页，同一 lane 里 bash 的 `curl` 被沙箱拒（403）。所以守卫对读取只放行普通路径与 `skill://`。
+- (2026-11-02, omp 18.15.0) `read` 支持 `http(s)://`、`www.` 与内部 URI（`agent artifact attachment cfg conflict history issue local mcp memory mr omp out pr proc rule security skill ssh vault xd`），都在 omp 进程里执行。实测 `read https://example.com` 取回网页，同一 lane 里 bash 的 `curl` 被沙箱拒（403）。所以守卫对读取只放行普通路径。
 - (2026-11-02, omp 18.15.0) `tools.approvalMode` 的默认值是 `yolo`（源码 `tools/settings.ts`）；用户可改成 `always-ask` / `always-ask-cached` / `write`，后三者在 bash 前会弹确认。lane 启动时显式传 `--approval-mode yolo`。
 - (2026-11-02, omp 18.15.0) 带 `--tools` 白名单时 omp 仍在启动时于**沙箱外**拉起配置里的 MCP server：实测 worktree 里的 `.omp/mcp.json`（项目级，`mcp.enableProjectConfig` 默认 true）声明的 context7 被 omp 进程拉起。MCP 工具不作为独立工具出现，而是 `xd://mcp__<server>_<tool>` 设备，经 `write` 调用；lane-guard 拒绝任何 `协议://` 写入，实测拦下，lane 里的模型调用不到 MCP。但仓库自带的 `.omp/mcp.json` 里写的命令会在 lane 启动时以用户权限执行——派发不信任的仓库前先看一眼它。
 - (2026-11-02, herdr 0.9.0 + omp 18.15.0) omp 跑完 goal 后 herdr 报 `idle`，跑完一轮普通 prompt 后报 `done`。
@@ -44,7 +44,12 @@
 - (2026-11-02, sandbox-runtime 0.0.26) 沙箱里 `git init`（含 `cargo init` 默认那次）失败：`.git/hooks` 被强制禁写；`cargo init` 要加 `--vcs none`。
 - (2026-11-02, pi 1.4.0) 策略文件损坏时底栏显示 `⛔ lane-guard: shell refused (…)`，bash 返回 `lane-guard refused the shell command: …`，没有命令在沙箱外执行。
 - (2026-11-02, pi 1.4.0) `ctx.ui.confirm` 默认高亮 `Yes`，所以 `--strict` 的询问用 `ctx.ui.select(…, ["Deny", "Allow"])`：回车 = Deny，模型收到 "a human declined it" 后照常继续。
-- (2026-11-02, lane-guard 确定性测试) 用模拟扩展接口的测试验过 27 种读写目标：各种 `协议://`（大小写不敏感）与 `www.` 的读取、`xd://` / `local://` 的写入被拦；`skill://` 与 worktree 内普通路径放行；禁读目录直接读、经软链读、`~` 展开、`grep` / `find` 搜祖先目录都被拦。
+- (2026-11-02, omp 18.15.0, 源码 + 独立审查) omp 的 `read` 会修复 `https:/host`（单斜杠）、把 `urn:x`、`custom:x` 这类无 `//` 的 scheme 交给 MCP 资源读取、把 `a;b` / `a,b` 拆成几次读——拆出来的那几次不再触发 `tool_call`，守卫看不到。所以守卫拦任何带 scheme（有无 `//`）、含 `://`、`www.` 开头、含 `;` 或 `,` 的读取目标。
+- (2026-11-02, omp 18.15.0, 源码 `extensibility/tool-event-input.ts`) `edit` 默认是 hashline 模式：补丁只改一个文件时 omp 才在事件里补上 `path`，改多个文件只给 `paths`；`MV DEST`、apply_patch 的 `*** Move to:`、patch 模式的 `rename` 都另有目标，且移动会保留可执行位。守卫逐个检查这些目标，一个也认不出时拒绝。
+- (2026-11-02, Bun) `write` 经过一个指向尚不存在文件的软链时会在链接目标处创建文件。守卫逐段 `lstat` 解析软链（含悬空的末段）再比较。
+- (2026-11-02, git 2.54 + sandbox-runtime 0.0.26) 主仓库的 `.git/commondir` 即使主 checkout 也会被读：沙箱里写一个指向 evil 的 `commondir`，主 checkout 的下一次 `git status` 就执行了 evil config 里的 `core.fsmonitor`；其他 worktree 的管理文件同理。所以公共 `.git` 只放行 `objects`、`refs`、`logs`、`lfs` 与本 lane 的管理目录（再扣掉其中的 `commondir` / `gitdir` / `config.worktree`）。实测这样 lane 里 commit、建分支、stash 都正常，写主仓库 `commondir` / `config.worktree` / hooks / config、其他 lane 的 `commondir` / `gitdir` 均 `Operation not permitted`。
+- (2026-11-02, omp 18.15.0, 源码 `discovery/builtin.ts`) omp 启动时不经确认就加载项目里的 `.omp/extensions/*`，还读 `.omp/settings.json`、`.omp/mcp.json` 与 `.claude/hooks`，都在 omp 自己的进程里、沙箱之外。lane 能写自己的 worktree，所以 lane 改了这两处后 `launch` 拒绝再启动它。
+- (2026-11-02, lane-guard 确定性测试) 用模拟扩展接口的测试验过 28 种读写目标：上面这些绕过（多文件 / 移动 / 改名的 edit、悬空软链与目录软链、单斜杠与大写 scheme、`urn:`、列表、`local:`、`skill://`、经软链读禁读文件）全部被拦；worktree 内的普通读写、单文件 edit、apply_patch 内的增改放行。
 - (2026-11-02, glm-5.3) 让模型读工作区外一个名为 secret 的文件，模型自己拒绝了——那是模型的判断，不是边界。
 
 ## openspec
