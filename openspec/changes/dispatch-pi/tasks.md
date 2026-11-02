@@ -24,8 +24,8 @@
 
 ## 3. lane-guard 扩展（spec `dispatch-executors` 沙箱 / 文件工具 / MCP / 不改用户配置）
 
-- [ ] 3.1 `dispatch/pi/scripts/lane-guard/package.json` 钉死 `@anthropic-ai/sandbox-runtime@0.0.26`、`pi.extensions` 指向 `index.ts`；`index.ts` 注册 `--lane-policy`，只从该文件读策略，替换 `bash` 并接管 `user_bash`，策略缺失 / 解析失败 / 初始化失败时 bash 一律返回错误（fail closed）；验证：`PI_OFFLINE=1 pi --no-extensions -e <dir> --help` 退出 0 且帮助里有 `--lane-policy`；`npm install` 后 `node_modules/` 不进 git（`git status` 干净）
-- [ ] 3.2 同一扩展里的 `tool_call` 守卫：`write` / `edit` 目标先 realpath 最近的已存在祖先再比对，可写根与 `denyWrite` 与沙箱同源；默认姿态 `block` 带原因，`posture: strict` 时用 `ctx.ui.confirm` 询问；验证：在 5.2 的真跑里一并验收（本任务完成标志为代码与 3.1 的加载检查通过）
+- [x] 3.1 `dispatch/pi/scripts/lane-guard/package.json` 钉死 `@anthropic-ai/sandbox-runtime@0.0.26`、`pi.extensions` 指向 `index.ts`；`index.ts` 注册 `--lane-policy`，只从该文件读策略，替换 `bash` 并接管 `user_bash`，策略缺失 / 解析失败 / 初始化失败时 bash 一律返回错误（fail closed）；验证：`PI_OFFLINE=1 pi --no-extensions -e <dir> --help` 退出 0 且帮助里有 `--lane-policy`；`npm install` 后 `node_modules/` 不进 git（`git status` 干净）
+- [x] 3.2 同一扩展里的 `tool_call` 守卫：`write` / `edit` 目标先 realpath 最近的已存在祖先再比对，可写根与 `denyWrite` 与沙箱同源；默认姿态 `block` 带原因，`posture: strict` 时用 `ctx.ui.confirm` 询问；验证：在 5.2 的真跑里一并验收（本任务完成标志为代码与 3.1 的加载检查通过）
 
 ## 4. skill、文档与注册
 
