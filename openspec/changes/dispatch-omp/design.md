@@ -23,6 +23,8 @@
 | O9 | 4 个 omp 同时启动、同时请求模型：全部正常；凭据在 `~/.omp/agent/agent.db`（SQLite），未见 pi 的配置锁问题 |
 | O10 | print 模式下 stdin 不是终端时 omp 卡在 `readPipedInput`，需 `< /dev/null`（仅影响探针，lane 是交互模式） |
 | O11 | 用户配置：`modelRoles.default = zhipu-coding-plan/glm-5.3`；`tools.approvalMode` 默认值是 `yolo`（源码 `tools/settings.ts`）；`omp models --json` 返回 `{"models": [...]}`，即已登录 provider 下可用的模型 |
+| O13 | （2026-11-02，实跑）刚建好的 pane 里立即 `herdr agent start` 一千多字符的 omp 命令，一次出现命令结尾丢字（`…git status is clea`）、引号未闭合、omp 没起来；pane 前台曾见到提示符钩子调用的 `gh`。偶发，未能稳定复现 |
+| O14 | （同上）`herdr agent start` 要等 agent 就绪才返回；omp 带 `--goal` 一启动就进入工作，herdr 有时 4 秒就返回，有时一直等到 goal 那一轮结束（实测一条 2 task lane 在 launch 返回时已经 `claims_done`），上限是 `--timeout` |
 | O12 | 界面：工作中有一行 `Working…`，底栏带转圈符与秒数（`⠧ 4s · GLM-5.3 · Goal 0 · <dir> · <branch> · 0.6%/1M`）；空闲时输入框是两条 `───` 之间的 `❯`，底栏首段换成静态图标；上边框可能带标题（`─── 󰗇 GREET: … ─`）；扩展状态行（`🔒 lane-guard: …`）在最后 |
 
 未实测：omp 的选择框 / 确认框长什么样（`--strict` 的 lane-guard 询问）、退出后的 pane、`paused` / `budget-limited` / `dropped` 的真实出现、Linux。
@@ -80,6 +82,8 @@ herdr agent start <name> --kind omp --pane <p> -- \
 - `confirm_submit`：沿用 pi 时代的逻辑（只在输入框里正是刚发的文字时补一次回车，选择框永不按键），仅用于 `--continue` / `--correct` 这类后续 prompt；输入框解析按 omp 的 `❯` 行实现。
 - `session_proves_primed: False`（O2：session 先于任何 turn 出现），但 omp 的 goal 在 launch 时已下达，"已下达"的证据就是 launch 记下的 `goal_sent_at`。
 - `launch_gap: 0`、无 `startup_problem`（O9）；`launch` 的 90 秒等界面逻辑保留（O2）。
+- 启动的送达（O13，对所有执行者）：`herdr agent start` 之前等 pane 的前台只剩 shell、连续两次读到相同（最多 20 秒）；启动后若 lane 里没有 agent、前台仍是 shell，判定命令没送达——发 ctrl+c 清掉输入，再启动一次，结果带 `start_retried: "start_not_delivered"`。已经起来又退出的 agent 不重试。
+- `goal_at_launch` 的执行者在 launch 返回时可能已经在工作（O14），`working` 也算启动成功。
 
 ### D6：doctor 与 setup
 

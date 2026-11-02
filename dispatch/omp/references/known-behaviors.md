@@ -22,6 +22,10 @@
 - (2026-11-02, herdr 0.9.0) herdr 一启动就报告 omp 的 session，`kind:"path"`，值是 `~/.omp/agent/sessions/<cwd 编码>/<时间>_<id>.jsonl`。所以"有 session"不证明 goal 下达过——omp 的 goal 在 launch 时随参数下达，以 bookkeeping 的记录为准。
 - (2026-11-02, herdr 0.9.0) omp 一轮结束后 agent 状态是 `idle`（pi 是 `done`）；herdr 先于 omp 画出界面就报就绪，`launch` 最多等 90 秒看到可识别的 pane。
 
+- (2026-11-02, herdr 0.9.0 + omp 18.15.0) 刚建好的 pane 里立即启动一千多字符的 omp 命令，出现过一次命令结尾丢字（`…git status is clea`）、引号未闭合、omp 没起来；当时 pane 前台有提示符钩子调用的 `gh`。偶发。`launch` 因此先等前台只剩 shell，启动后发现没有 agent 且前台是 shell 就 ctrl+c 清掉输入再启动一次（`start_retried: "start_not_delivered"`）；用"先留一个未闭合的引号"人为制造这种失败，重试实测有效。
+- (2026-11-02, herdr 0.9.0 + omp 18.15.0) `herdr agent start` 要等 agent 就绪才返回；omp 带 `--goal` 一启动就工作，herdr 有时 4 秒返回，有时等到 goal 那一轮结束（一条 2 task lane 在 launch 返回时已经 `claims_done`），上限是 `--timeout`。所以 launch 返回时 lane 处于 `working` 也算启动成功。
+- (2026-11-02, omp 18.15.0) 工作中与空闲的界面识别对着实时 pane 复核过：herdr 报 `working` 的 7 次读取都判为 `working`，空闲判为 `ready`。
+
 ## lane-guard（sandbox-runtime 0.0.26）
 
 同一个 lane-guard 先在 pi 上做过完整测试，标 "pi 1.4.0" 的条目来自那时；它经 omp 的 pi 兼容层加载，标 "omp" 的条目是在 omp 上复测的。

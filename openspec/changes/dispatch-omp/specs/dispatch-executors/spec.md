@@ -137,6 +137,14 @@ An omp lane SHALL be given its goal — applying the change through the OpenSpec
 - **WHEN** the session records a goal as complete and afterwards records mode changes without a goal
 - **THEN** the sweep SHALL still read the goal as complete
 
+#### Scenario: Start command not delivered
+- **WHEN** the start command typed into the lane's pane never reaches the shell intact, so no agent runs and the bare shell is in the foreground
+- **THEN** the dispatcher SHALL clear the pane's input and start the agent once more, and SHALL report the retry; an agent that started and then exited SHALL NOT be retried
+
+#### Scenario: Agent already working when the start returns
+- **WHEN** the omp lane is already working on its goal when the start returns
+- **THEN** the lane SHALL count as started
+
 #### Scenario: Goal requested again
 - **WHEN** a goal prompt is requested for an omp lane that was started with its goal
 - **THEN** nothing SHALL be sent and the request SHALL be refused as already primed

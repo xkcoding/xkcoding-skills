@@ -934,6 +934,26 @@ def cmd_create(args):
 
 # ---------- launch ----------
 
+def pane_foreground(pane):
+    """(shell pid, pids of the pane's foreground processes)."""
+    rc, data = jrun(["herdr", "pane", "process-info", "--pane", pane])
+    info = ((data or {}).get("result") or {}).get("process_info") or {}
+    return info.get("shell_pid"), [p.get("pid") for p in info.get("foreground_processes") or []]
+
+
+def wait_shell_idle(pane, timeout=20):
+    """True once only the pane's shell is in the foreground on two reads in a row. A prompt hook still running
+    (one that calls gh, say) garbles a long command typed into it (known-behaviors O13)."""
+    deadline, quiet = time.time() + timeout, 0
+    while time.time() < deadline:
+        shell, fg = pane_foreground(pane)
+        quiet = quiet + 1 if shell and fg == [shell] else 0
+        if quiet >= 2:
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def already_primed(root, change, worktree, ex, session):
     """Evidence that a lane already received its goal. The bookkeeping mark covers the window before any other
     evidence exists; whether a session alone proves it depends on when herdr starts reporting one."""
@@ -998,6 +1018,7 @@ def cmd_launch(args):
     waited = wait_gap(root, args.executor, "ready_epoch")
 
     def start():
+        wait_shell_idle(pane)
         taken = {a.get("name") for a in (herdr_agents() or []) if a.get("name")}
         name = sanitize_agent_name(args.change, taken)
         rc, data = jrun(["herdr", "agent", "start", name, "--kind", args.executor, "--pane", pane,
@@ -1012,6 +1033,14 @@ def cmd_launch(args):
             time.sleep(1)
 
     name, err, text, state = start()
+    # A start command that never reached the shell intact leaves no agent and the bare shell in the foreground:
+    # clear what was typed and start once more. An agent that started and then exited is not retried.
+    start_retried = None
+    shell, fg = pane_foreground(pane)
+    if state in ("unknown", "exited") and not agents_in(herdr_agents(), lane["worktree"]) and shell and fg == [shell]:
+        run(["herdr", "pane", "send-keys", pane, "ctrl+c"])
+        name, err, text, state = start()
+        start_retried = "start_not_delivered"
     problem = ex["startup_problem"](text) if ex["startup_problem"] and state == "ready" else None
     retried = None
     # An executor that lost the race for its own config lock comes up without a model: stop it, start it
@@ -1024,7 +1053,9 @@ def cmd_launch(args):
         time.sleep(ex["launch_gap"])
         name, err, text, state = start()
         problem = ex["startup_problem"](text) if state == "ready" else None
-    up = state in ("ready", "dialog") and not problem
+    # An executor given its goal at start-up may already be working (herdr can even wait for that turn to end
+    # before it reports the agent ready, known-behaviors O14).
+    up = (state in ("ready", "dialog") or (ex["goal_at_launch"] and state == "working")) and not problem
     book_update(root, args.change, executor=args.executor, posture=posture, agent_name=name,
                 ready_epoch=time.time() if up else None, model=model)
     if up and goal_text:
@@ -1032,7 +1063,7 @@ def cmd_launch(args):
     emit({"ok": up, "change": args.change, "executor": args.executor, "agent_name": name, "pane_id": pane,
           "workspace_id": ws, "posture": posture, "start_result": err or "started", "state": state,
           "startup_problem": problem, "retried": retried, "waited_s": waited, "policy_file": policy_file,
-          "model": model, "goal_sent": bool(up and goal_text),
+          "model": model, "goal_sent": bool(up and goal_text), "start_retried": start_retried,
           "pane_tail": pane_tail(text)}, 0 if up else 1)
 
 
