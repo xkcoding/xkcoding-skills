@@ -6,14 +6,14 @@ description: >-
 argument-hint: '[<change> …] [--strict] [--ready] [--no-pr] [--no-loop] | status | setup'
 metadata:
   author: xkcoding
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # /dispatch:codex
 
 把已经 propose 好的 OpenSpec change 交给 codex 去做：每个 change 一条 lane——一个独立的 git worktree、一个分支、一个 codex——lane 里跑的就是标准的 OpenSpec apply。你是**调度者**：不写一行实现，只负责派发、盯进度、亲手验收、把验证过的分支 push 出去并开评审请求（PR / MR）。
 
-`/opsx:apply` = 我在这里做；`/dispatch:codex` = 派给 codex 做。同一个仓库里每个 change 各选各的。
+`/opsx:apply` = 我在这里做；`/dispatch:codex` = 派给 codex 做；`/dispatch:pi` = 派给 pi 做。同一个仓库里每个 change 各选各的；任一入口的 `status` 都管仓库里**全部** lane，并按每条 lane 自己的执行者判断。
 
 用用户的语言回复；commit、评审请求用英文。
 
@@ -33,7 +33,7 @@ metadata:
 ## 前置检查
 
 ```bash
-bash "${CLAUDE_SKILL_DIR}/scripts/doctor.sh"
+bash "${CLAUDE_SKILL_DIR}/scripts/doctor.sh" --executor codex
 ```
 
 只读，输出一份 JSON。它对每个工具**实际执行** version 命令——`PATH` 上存在但跑不起来的 shim 也算缺失。
@@ -66,11 +66,11 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/lane.py" <子命令> …
 
 | 子命令 | 作用 |
 |---|---|
-| `plan [<change> …] [--no-pr]` | 只读。哪些 change 可派发、不可派发的原因、推导出的分支 / worktree / agent 名、base、发布能做到哪一步 |
-| `create <change>` | 建 worktree 与 `change/<change>` 分支；change 还没提交时，把它搬进 worktree 成为该分支的首个 commit。base 分支不会被动 |
-| `launch <change> [--strict]` | 在 lane 的 pane 里启动 codex；返回 `state`：`ready` / `dialog` / `exited` / `unknown`，附 `pane_tail` |
+| `plan [<change> …] --executor codex [--no-pr]` | 只读。哪些 change 可派发、不可派发的原因（已有 lane 时附 `lane_executor`）、推导出的分支 / worktree / agent 名、base、发布能做到哪一步 |
+| `create <change> --executor codex` | 建 worktree 与 `change/<change>` 分支；change 还没提交时，把它搬进 worktree 成为该分支的首个 commit。base 分支不会被动 |
+| `launch <change> --executor codex [--strict]` | 在 lane 的 pane 里启动 codex；返回 `state`：`ready` / `dialog` / `exited` / `unknown`，附 `pane_tail` |
 | `prompt <change> --goal \| --plain \| --continue \| --resume \| --correct "<text>"` | 发一条 prompt。发之前自动确认身份、确认 lane 空闲、确认没有弹层；goal 只会发出一次 |
-| `list [--table]` | 所有 lane 的总览与 `verdict`。`--table` 每条 lane 一行，给人看 |
+| `list [--table]` | 所有 lane（含 pi 的）的总览、执行者与 `verdict`。`--table` 每条 lane 一行，给人看 |
 | `record-verify <change>` | 从 stdin 的 JSON 写 `verify.md` 并提交到 lane 分支 |
 | `publish <change> --title "<t>" [--body-file F] [--ready] [--no-pr] [--via gh\|glab\|handoff] [--ack-remote]` | 检查越界 push → 显式 refspec push → 能自己开评审请求就开（或复用已有的），否则交出 `handoff` |
 | `forge [--set gh\|glab\|handoff\|none [--tool NAME]] [--forget]` | 这个远端的 host 用什么开评审请求；选择按 host 记住 |
@@ -91,7 +91,7 @@ push 是纯 git，任何托管都一样；**只有"开评审请求"取决于代�
 
 ## 派发
 
-1. **计划。** `plan <change…>`。不可派发的 change 把 `reason` 原样告诉用户，其余照常继续；`tasks_without_verification` 非空时提醒用户：这些 task 没写怎么验证，验收时只能靠读 diff。
+1. **计划。** `plan <change…> --executor codex`。不可派发的 change 把 `reason` 原样告诉用户（已有 lane 时说明它由哪个执行者在跑），其余照常继续；`tasks_without_verification` 非空时提醒用户：这些 task 没写怎么验证，验收时只能靠读 diff。
 2. **确认一次。** 展示每个 change 的分支、worktree、剩余 task 数、change 目录状态（`untracked` → 会成为 lane 分支的首个 commit；`tracked` → 从当前 HEAD 拉分支），再加三句话：
    - 姿态——默认：`codex 自动审查 + 沙箱：越出沙箱的操作由 codex 的审查模型自动判定，不会停下来等你`；`--strict`：`沙箱 + 按需审批：越界操作停下来等你批准，我只转达、不代答，lane 会因此停顿`。
    - 做完之后——按 `plan` 返回的 `review` 如实说：我亲手重跑验收、写 `verify.md`、push，然后对 `<pr_base>` 开 draft 评审请求（写明用什么开：`gh` / `glab` / `review.tool`）；`push-only` / `local-only` 连同 `reason` 一起说明；`undecided` 就在这里把[评审请求工具](#评审请求工具)那个问题一并问掉。不承诺做不到的事。
@@ -107,7 +107,7 @@ push 是纯 git，任何托管都一样；**只有"开评审请求"取决于代�
 
 ## 巡检
 
-`list`（给用户看用 `--table`），然后按每条 lane 的 `verdict` 处理。无变化的 lane 不要去读 pane——巡检会跑很多次，省着用上下文。
+`list`（给用户看用 `--table`），然后按每条 lane 的 `verdict` 处理。无变化的 lane 不要去读 pane——巡检会跑很多次，省着用上下文。总览里也会出现 pi 的 lane：按同一张表处理，但往 pi lane 发东西、处理它的弹层时，按 `/dispatch:pi` 的规则来。
 
 | verdict | 做什么 |
 |---|---|
@@ -121,6 +121,7 @@ push 是纯 git，任何托管都一样；**只有"开评审请求"取决于代�
 | `goal_paused` / `goal_blocked` / `goal_budget_limited` | 上报，不恢复：暂停多半是用户自己按的；`blocked` 是 codex 连续多个 turn 确认过的阻塞 |
 | `lane_pushed_itself` | lane 越界了。上报；用户明确接受之后才 `publish --ack-remote` |
 | `no_agent` | 刚 `create` 完还没启动 → `launch`。否则 codex 已退出 → 上报，由用户决定重新派发还是进 worktree 原地 `/opsx:apply` |
+| `unknown_executor` | lane 里的 agent 不是 codex 或 pi，或没有 agent 也没有记录。不碰，上报 |
 | `ambiguous_agent` | 同一个 worktree 里不止一个 agent。不碰，上报 |
 | `awaiting_user` | 已上报过，一行带过；用户答复后 `note … clear` |
 | `herdr_unreachable` | herdr 连不上（多半是当前会话不在 herdr pane 里）。进度照常报告，但不操纵任何 lane；请用户回到 herdr pane 里再执行 |

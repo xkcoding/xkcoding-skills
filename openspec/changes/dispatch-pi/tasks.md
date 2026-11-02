@@ -20,7 +20,7 @@
 - [x] 2.2 pi 的 `goal_probe`（design D5）：从 herdr 报的 session 路径倒序取最后一条 `customType == "pi-codex-goal"` 且带 `status` 的记录，连字符规范为下划线；文件不存在或无记录时返回 `unavailable`；验证：用实测形态构造的 JSONL 样例（只有 `usage/active`；末条 `set/complete`；含 `budget-limited`；空文件）分别得到 `active` / `complete` / `budget_limited` / `unavailable`
 - [x] 2.3 pi 的 `pane_state`（design D6、P7）：`Working` 分隔行 → `working`；`To resume this session` 或无 pi 底栏的 shell → `exited`；空输入框 + 底栏 → `ready`；其余 → `unknown`；changelog 与 Update Available 横幅不影响判断；验证：用实测抓到的四段 pane 文本（启动就绪含 changelog、工作中、goal 完成空闲、退出后）做样例，分类结果正确
 - [x] 2.4 pi 的"已下达 goal"证据与提交确认（design D5、D6）：pi 不以 session 存在为证据；`launch` 后等到 `ready` 才允许 `prompt`；`prompt` 后约 15 秒内未进入 `working` 且输入框仍是所发文字 → `send-keys enter` 一次，仍不动则 `ok:false` 附 pane 尾部；`done` 与 `idle` 都视为不在工作；验证：临时仓库里对刚启动的 pi lane 立即 `prompt --goal`，lane 进入工作且 session 里只有一条 goal `set` 记录；对已下达 goal 的 lane 再发 `--goal` 被拒
-- [ ] 2.5 pi 的启动间隔与"无模型"重启（design D9、P16）：适配表加 `launch_gap`（pi 4 秒、codex 0）；`launch` 拿到 `ready` 后若底栏模型为 `unknown` 或 pane 出现 `No API key found`，则 `/quit`、隔 `launch_gap` 重启一次并在结果里带 `retried: "no_model"`，仍无模型则 `ok:false`；退出类失败不重试；`SKILL.md` 的派发步骤写明 pi lane 逐个 launch、goal 之间同样间隔；验证：用 P16 实测的无模型 pane 文本与正常就绪的 pane 文本做样例，前者判为无模型、后者不是；5.5 里真跑一次
+- [x] 2.5 pi 的启动间隔与"无模型"重启（design D9、P16）：适配表加 `launch_gap`（pi 4 秒、codex 0）；`launch` 拿到 `ready` 后若底栏模型为 `unknown` 或 pane 出现 `No API key found`，则 `/quit`、隔 `launch_gap` 重启一次并在结果里带 `retried: "no_model"`，仍无模型则 `ok:false`；退出类失败不重试；`SKILL.md` 的派发步骤写明 pi lane 逐个 launch、goal 之间同样间隔；验证：用 P16 实测的无模型 pane 文本与正常就绪的 pane 文本做样例，前者判为无模型、后者不是；5.5 里真跑一次
 
 ## 3. lane-guard 扩展（spec `dispatch-executors` 沙箱 / 文件工具 / MCP / 不改用户配置）
 
@@ -29,7 +29,7 @@
 
 ## 4. skill、文档与注册
 
-- [ ] 4.1 新建 `dispatch/pi/SKILL.md`：结构对齐 `dispatch/codex/SKILL.md`，入口 `/dispatch:pi`，所有脚本调用带 `--executor pi`，姿态句、启动期处理、goal 下达、技术事实按 pi 写，写明 `status` 覆盖全部 lane；codex 的 SKILL.md 补"巡检覆盖两种执行者、执行者列"；验证：`python3 skill-craft/scripts/check.py dispatch/pi` 与 `dispatch/codex` 无 error
+- [x] 4.1 新建 `dispatch/pi/SKILL.md`：结构对齐 `dispatch/codex/SKILL.md`，入口 `/dispatch:pi`，所有脚本调用带 `--executor pi`，姿态句、启动期处理、goal 下达、技术事实按 pi 写，写明 `status` 覆盖全部 lane；codex 的 SKILL.md 补"巡检覆盖两种执行者、执行者列"；验证：`python3 skill-craft/scripts/check.py dispatch/pi` 与 `dispatch/codex` 无 error
 - [ ] 4.2 `dispatch/pi/references/setup.md`：安装 pi、Node ≥ 24、ripgrep、Linux 的 bwrap / socat，征得同意后在 skill 目录 `npm install`，pi 登录由用户自己做，`openspec init --tools pi` 并提交；验证：按文档在本机逐项执行 `/dispatch:pi setup` 的检测，每个缺失项都给出文档里的那条命令
 - [ ] 4.3 `dispatch/pi/references/known-behaviors.md`：design 的 P1–P15 逐条带日期与版本；未验证项单列（`paused` / `blocked` / `waiting` / `budget_limited` 的真实出现、`--strict` 确认框样子、`--offline` 行为、长任务 compaction）；验证：每条已验证事实都有日期与版本号
 - [ ] 4.4 `.claude-plugin/marketplace.json` 的 `dispatch` 插件 `skills` 加 `./dispatch/pi` 并更新描述；`dispatch/README.md`（执行者两种、前置条件按执行者、pi 姿态、`sync-engine.sh`）；仓库 `CLAUDE.md` 增加 `dispatch:pi` 一节与"改引擎后跑 `sync-engine.sh`"的开发规范；`CHANGELOG.md`；`dispatch/codex` 版本 0.2.0、`dispatch/pi` 0.1.0；验证：`jq . .claude-plugin/marketplace.json` 解析通过，`dispatch/sync-engine.sh --check` 退出 0
