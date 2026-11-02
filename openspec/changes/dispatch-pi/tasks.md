@@ -30,8 +30,8 @@
 ## 4. skill、文档与注册
 
 - [x] 4.1 新建 `dispatch/pi/SKILL.md`：结构对齐 `dispatch/codex/SKILL.md`，入口 `/dispatch:pi`，所有脚本调用带 `--executor pi`，姿态句、启动期处理、goal 下达、技术事实按 pi 写，写明 `status` 覆盖全部 lane；codex 的 SKILL.md 补"巡检覆盖两种执行者、执行者列"；验证：`python3 skill-craft/scripts/check.py dispatch/pi` 与 `dispatch/codex` 无 error
-- [ ] 4.2 `dispatch/pi/references/setup.md`：安装 pi、Node ≥ 24、ripgrep、Linux 的 bwrap / socat，征得同意后在 skill 目录 `npm install`，pi 登录由用户自己做，`openspec init --tools pi` 并提交；验证：按文档在本机逐项执行 `/dispatch:pi setup` 的检测，每个缺失项都给出文档里的那条命令
-- [ ] 4.3 `dispatch/pi/references/known-behaviors.md`：design 的 P1–P15 逐条带日期与版本；未验证项单列（`paused` / `blocked` / `waiting` / `budget_limited` 的真实出现、`--strict` 确认框样子、`--offline` 行为、长任务 compaction）；验证：每条已验证事实都有日期与版本号
+- [x] 4.2 `dispatch/pi/references/setup.md`：安装 pi、Node ≥ 24、ripgrep、Linux 的 bwrap / socat，征得同意后在 skill 目录 `npm install`，pi 登录由用户自己做，`openspec init --tools pi` 并提交；验证：按文档在本机逐项执行 `/dispatch:pi setup` 的检测，每个缺失项都给出文档里的那条命令
+- [x] 4.3 `dispatch/pi/references/known-behaviors.md`：design 的 P1–P15 逐条带日期与版本；未验证项单列（`paused` / `blocked` / `waiting` / `budget_limited` 的真实出现、`--strict` 确认框样子、`--offline` 行为、长任务 compaction）；验证：每条已验证事实都有日期与版本号
 - [ ] 4.4 `.claude-plugin/marketplace.json` 的 `dispatch` 插件 `skills` 加 `./dispatch/pi` 并更新描述；`dispatch/README.md`（执行者两种、前置条件按执行者、pi 姿态、`sync-engine.sh`）；仓库 `CLAUDE.md` 增加 `dispatch:pi` 一节与"改引擎后跑 `sync-engine.sh`"的开发规范；`CHANGELOG.md`；`dispatch/codex` 版本 0.2.0、`dispatch/pi` 0.1.0；验证：`jq . .claude-plugin/marketplace.json` 解析通过，`dispatch/sync-engine.sh --check` 退出 0
 
 ## 5. 真跑验收（`/tmp` 一次性仓库 + herdr）
