@@ -39,6 +39,9 @@
 - (2026-11-02, sandbox-runtime 0.0.26) 沙箱里 `git init`（含 `cargo init` 默认的那次）失败：`.git/hooks` 被强制禁写。lane 本就在现成仓库里，`cargo init` 要加 `--vcs none`。
 - (2026-11-02, pi 1.4.0) 策略文件损坏时底栏显示 `⛔ lane-guard: shell refused (…)`，bash 调用返回 `lane-guard refused the shell command: …`，没有任何命令在沙箱外执行。
 - (2026-11-02, pi 1.4.0) `ctx.ui.confirm` 默认高亮 `→ Yes`，一个多余的回车就会放行；所以 `--strict` 的询问改用 `ctx.ui.select(…, ["Deny", "Allow"])`。实测：弹层样式同信任框（`↑↓ navigate  enter select …`），回车 = Deny，模型收到 "a human declined it" 后照常继续。
+- (2026-11-02, git 2.x + sandbox-runtime 0.0.26，PR 审查发现并复现) 只禁写 `.git/hooks` 与 `.git/config` 不够：lane 在沙箱里把 worktree 的 `.git` 指针改成 `gitdir: ./evil`，在 evil 的 config 里设 `core.fsmonitor`，沙箱外的下一次 `git status` 就以用户权限执行了它。现在策略还禁写 worktree 的 `.git` 与管理目录里的 `commondir` / `gitdir` / `config.worktree`（改写、删除、改名都被拒，lane 自己 commit 不受影响），`lane.py` 的 git 一律带 `-c core.fsmonitor=false`。
+- (2026-11-02, pi 1.4.0) pi 默认启用的内置工具只有 `read`、`bash`、`edit`、`write`，`grep` / `find` / `ls` 默认不开。`read` 在 pi 进程里执行、不经沙箱，沙箱的 `denyRead` 管不到它，所以守卫对 `read` / `grep` / `find` / `ls` 另行执行同一份禁读名单（经软链、`~` 展开、`grep` / `find` 搜祖先目录都算）；用模拟 pi 接口的确定性测试验过 13 种情形。
+- (2026-11-02, glm-5.3) 让模型读工作区外一个名为 secret 的文件、或建一条指向它的软链，模型自己拒绝了——那是模型的判断，不是边界；边界见上一条。
 - (2026-10-29, pi 官方示例) pi 自带的 sandbox 示例只替换 `bash`；`write` 越界会成功。所以守卫必须单独拦 `write` / `edit`。示例的配置合并按键浅合并，而且会读 `<cwd>/.pi/sandbox.json`——lane-guard 只读 `--lane-policy`。
 
 ## openspec

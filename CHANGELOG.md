@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - goal 用固定版本的 `pi-codex-goal`（`-e npm:` 只为本次运行加载），项目信任用 `--approve`（只对本次运行生效）；不改用户的 pi 配置，lane 里关闭 MCP
   - 多条 pi lane 逐条启动、goal 逐条下达，彼此错开 4 秒；pi 抢配置锁失败时会带着 `unknown` 模型起来，`launch` 识别后自行重启一次
   - 发出的 prompt 会核对是否真的提交，只在输入框里正是刚发的文字时补一次回车；pi 的选择框等人时 herdr 仍报 `working`，巡检读 pane 改判为 `blocked`
+- 审查后加固：pi lane 不能再改写 worktree 的 `.git` 指针与管理目录里的 `commondir` / `gitdir` / `config.worktree`（否则可让沙箱外的 git 执行仓库配置里的程序），`lane.py` 的 git 一律关闭 fsmonitor；pi 自带的 `read` / `grep` / `find` / `ls` 也执行禁读名单；npm 镜像的同域通配不再扩到 `*.com.cn` 这类公共后缀；`doctor.sh --executor` 缺值不再死循环；无模型重启前若首个 pi 停不下来就不再起第二个；旧版本留下、没有执行者字段的记录按 codex 处理
 - `dispatch/sync-engine.sh`：把引擎从 `dispatch/codex/scripts/` 同步到其他执行者，`--check` 校验逐字节一致
 
 ### Changed

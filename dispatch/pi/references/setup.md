@@ -80,7 +80,7 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/lane.py" forge --forget
 你 review → 你 merge → 你 /opsx:archive
 ```
 
-**lane 的边界**：pi 自己不带沙箱。lane 里的 shell 命令由 lane-guard 放进 OS 沙箱（macOS Seatbelt / Linux bubblewrap）：只能写这条 lane 的 worktree、仓库的 `.git`（`hooks` 与 `config` 除外）、各包管理器的缓存（npm、pnpm、bun、pip / uv、Go、Maven、Cargo）和 lane 自己的临时目录；网络只放行公共包源和你本机为 npm / pip / Go / Maven / Cargo 配置的源。Maven 本地仓库、Go 模块缓存这类共享缓存因此可被 lane 写入。`write` / `edit` 越界会被拦下；`--strict` 下改为问你，默认选项是拒绝。pi 进程本身与它加载的其他扩展不在沙箱里，lane 里关掉了 MCP。
+**lane 的边界**：pi 自己不带沙箱。lane 里的 shell 命令由 lane-guard 放进 OS 沙箱（macOS Seatbelt / Linux bubblewrap）：只能写这条 lane 的 worktree、仓库的 `.git`（`hooks` 与 `config` 除外）、各包管理器的缓存（npm、pnpm、bun、pip / uv、Go、Maven、Cargo）和 lane 自己的临时目录；网络只放行公共包源和你本机为 npm / pip / Go / Maven / Cargo 配置的源。Maven 本地仓库、Go 模块缓存这类共享缓存因此可被 lane 写入——也就是说 lane 能在里面放进你之后在沙箱外构建时会执行的代码。`write` / `edit` 越界会被拦下；`--strict` 下改为问你，默认选项是拒绝。pi 进程本身与它加载的其他扩展不在沙箱里，lane 里关掉了 MCP。
 
 **会话结束之后**：定时巡检活在当前会话里，会话结束它就没了；lane 里的 pi 会继续干活，只是没人盯。回来后在同一个仓库、herdr pane 内执行 `/dispatch:pi status`（或 `/dispatch:codex status`，两者都看全部 lane），监督即恢复——状态全部现查，不依赖上一个会话。
 

@@ -17,7 +17,7 @@ Lets the same dispatch workflow hand OpenSpec changes to more than one coding ag
 - **THEN** each lane SHALL run its own executor and neither dispatch SHALL alter the other lane
 
 ### Requirement: The executor is a property of each lane
-The executor of a lane SHALL be determined from the agent herdr reports in the lane's worktree when one is running, and otherwise from the disposable bookkeeping. A lane whose executor cannot be determined either way SHALL be reported with an unknown executor and SHALL NOT be steered.
+The executor of a lane SHALL be determined from the agent herdr reports in the lane's worktree when one is running, and otherwise from the disposable bookkeeping, where a record written before executors were recorded counts as codex. A lane whose executor cannot be determined either way SHALL be reported with an unknown executor and SHALL NOT be steered.
 
 #### Scenario: Bookkeeping lost while the agent runs
 - **WHEN** the bookkeeping is deleted while a pi lane's agent is running
@@ -25,6 +25,10 @@ The executor of a lane SHALL be determined from the agent herdr reports in the l
 
 #### Scenario: Lanes from before executors were recorded
 - **WHEN** a lane created by an earlier version has no executor in the bookkeeping and herdr reports a codex agent in its worktree
+- **THEN** the lane SHALL be treated as a codex lane
+
+#### Scenario: Earlier lane whose agent has exited
+- **WHEN** a lane created by an earlier version has a bookkeeping record without an executor and no running agent
 - **THEN** the lane SHALL be treated as a codex lane
 
 #### Scenario: No agent and no record
@@ -46,7 +50,7 @@ The lane mechanics shipped in the `codex` and `pi` skill directories SHALL be id
 - **THEN** the repository's sync check SHALL fail and name the files that differ
 
 ### Requirement: A pi lane's shell runs inside an operating-system sandbox
-Every shell command a pi lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree, the repository's common git directory excluding that directory's hooks and config, the user's package-manager caches, and a temporary directory private to the lane. The sandbox SHALL deny reading the user's SSH, cloud and GnuPG credential directories. Outbound network access from the sandbox SHALL be limited to an allowlist of package-registry hosts: the public registries and the registries and mirrors the user configured for npm, pip, Go, Maven and Cargo. Package managers that do not use the sandbox's proxy on their own SHALL be configured inside the sandbox to use it. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
+Every shell command a pi lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree, the repository's common git directory excluding that directory's hooks and config, the user's package-manager caches, and a temporary directory private to the lane. The files that tell git where the lane's repository is — the worktree's `.git` pointer and its administrative `commondir`, `gitdir` and `config.worktree` — SHALL NOT be writable, and the dispatcher's own git commands SHALL NOT run a repository-configured file-system monitor. The sandbox SHALL deny reading the user's SSH, cloud and GnuPG credential directories. Outbound network access from the sandbox SHALL be limited to an allowlist of package-registry hosts: the public registries and the registries and mirrors the user configured for npm, pip, Go, Maven and Cargo. Package managers that do not use the sandbox's proxy on their own SHALL be configured inside the sandbox to use it. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
 
 #### Scenario: Commit from the lane
 - **WHEN** a pi lane runs `git commit` in its worktree
@@ -60,6 +64,10 @@ Every shell command a pi lane runs — through its shell tool or a user-entered 
 - **WHEN** a pi lane's shell command writes to the main checkout, the home directory, or the common git directory's hooks or config
 - **THEN** the write SHALL fail with a permission error
 
+#### Scenario: Redirecting git
+- **WHEN** a pi lane tries to rewrite or remove its worktree's `.git` pointer or the worktree's `commondir`
+- **THEN** the write SHALL fail, and a later `list` SHALL run no program named in a repository configuration
+
 #### Scenario: Host not on the allowlist
 - **WHEN** a pi lane's shell command connects to a host that is not on the allowlist
 - **THEN** the connection SHALL be refused
@@ -69,11 +77,15 @@ Every shell command a pi lane runs — through its shell tool or a user-entered 
 - **THEN** every shell command SHALL be refused with that reason and no shell command SHALL run outside the sandbox
 
 ### Requirement: A pi lane's file tools are confined to the same writable locations
-pi's built-in file-writing tools SHALL be allowed to write only inside the same writable locations as the sandbox, with paths resolved through symbolic links before comparison. By default a write outside them SHALL be blocked and the reason returned to the model. Under `--strict` such a write SHALL instead wait for a human's approval, which the supervisor SHALL surface and SHALL NOT answer.
+pi's built-in file-writing tools SHALL be allowed to write only inside the same writable locations as the sandbox, with paths resolved through symbolic links before comparison. pi's built-in file-reading tools SHALL NOT read the directories the sandbox denies reading — directly, through a symbolic link, or by searching or finding through one of their ancestors. By default a write outside them SHALL be blocked and the reason returned to the model. Under `--strict` such a write SHALL instead wait for a human's approval, which the supervisor SHALL surface and SHALL NOT answer.
 
 #### Scenario: Write inside the lane through an alias path
 - **WHEN** a pi lane writes a file whose path reaches the worktree through a symbolic link
 - **THEN** the write SHALL succeed
+
+#### Scenario: Reading a protected directory
+- **WHEN** a pi lane's read tool targets a file under `~/.ssh`, or its grep or find tool searches the home directory
+- **THEN** the call SHALL be blocked and nothing from the protected directory SHALL reach the model
 
 #### Scenario: Write outside the lane, default posture
 - **WHEN** a pi lane's write or edit tool targets a path outside the writable locations

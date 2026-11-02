@@ -13,6 +13,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { SandboxManager } from "@anthropic-ai/sandbox-runtime";
 import type { BashOperations, ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -38,6 +39,13 @@ function canonical(path: string): string {
 		head = dirname(head);
 	}
 	return resolve(realpathSync(head), ...tail);
+}
+
+// A tool's path argument, absolute and with symlinks resolved; "~" means the home directory, as in a shell.
+function toolPath(raw: unknown, cwd: string): string {
+	let p = String(raw ?? "").trim() || ".";
+	if (p === "~" || p.startsWith("~/")) p = homedir() + p.slice(1);
+	return canonical(isAbsolute(p) ? p : resolve(cwd, p));
 }
 
 function within(path: string, root: string): boolean {
@@ -144,6 +152,7 @@ export default function (pi: ExtensionAPI) {
 	let policy: LanePolicy | undefined;
 	let roots: string[] = [];
 	let denied: string[] = [];
+	let unreadable: string[] = [];
 	// Fail closed: until the sandbox is up, this is the reason every shell command is refused.
 	let refusal: string | undefined = "lane-guard has not started yet";
 
@@ -163,10 +172,19 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
+		const raw = (event.input as { path?: unknown }).path;
+		// pi's own file readers run outside the OS sandbox, so the sandbox's denyRead has to be enforced here.
+		if (["read", "grep", "find", "ls"].includes(event.toolName)) {
+			if (!policy) return { block: true, reason: `lane-guard has no policy: ${refusal}` };
+			const target = toolPath(raw, ctx.cwd);
+			// grep and find recurse, so searching an ancestor of a protected directory reads it too.
+			const recursive = event.toolName === "grep" || event.toolName === "find";
+			const hit = unreadable.find((d) => within(target, d) || (recursive && within(d, target)));
+			return hit ? { block: true, reason: `${target} reaches ${hit}, which this lane may not read` } : undefined;
+		}
 		if (event.toolName !== "write" && event.toolName !== "edit") return undefined;
 		if (!policy) return { block: true, reason: `lane-guard has no policy: ${refusal}` };
-		const raw = String((event.input as { path?: unknown }).path ?? "");
-		const target = canonical(isAbsolute(raw) ? raw : resolve(ctx.cwd, raw));
+		const target = toolPath(raw, ctx.cwd);
 		const inside = roots.some((r) => within(target, r)) && !denied.some((d) => within(target, d));
 		if (inside) return undefined;
 		const reason = `${target} is outside this lane's writable paths (the lane worktree, the repository's git directory except its hooks and config, package-manager caches, and the lane's temp directory)`;
@@ -197,6 +215,7 @@ export default function (pi: ExtensionAPI) {
 		}
 		roots = policy.allowWrite.map((p) => canonical(p));
 		denied = policy.denyWrite.map((p) => canonical(p));
+		unreadable = policy.denyRead.map((p) => canonical(p));
 		if (process.platform !== "darwin" && process.platform !== "linux") {
 			return fail(`no OS sandbox on ${process.platform}`);
 		}

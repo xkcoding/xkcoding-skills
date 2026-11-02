@@ -133,7 +133,7 @@ lane.py forge --forget                                 # 忘掉
 - 新 worktree 里没有未跟踪的文件（`node_modules`、`.env`）。依赖由 lane 自己装；密钥不会被复制过去。
 - 多个 change 改同一个代码文件：合并时按普通 git 冲突处理，最好在 propose 阶段就拆开。多个 change 改同一个 capability spec：按 OpenSpec 官方说法，在 archive 时以 `specs/` 冲突的形式出现。
 - 所有 codex lane 共用一个 codex 账号，所有 pi lane 共用 pi 里同一份模型凭据，限流窗口各自共享。
-- pi lane 只支持 macOS 与 Linux（没有 OS 沙箱的平台不派发）；沙箱行为目前只在 macOS 上实测过。pi lane 能写你共享的包缓存（包括 Maven 本地仓库与 Go 模块缓存）——为了让 lane 装得了依赖，这是有意的取舍。实测能装：pip、uv、npm、pnpm、bun、Go、Maven 3.8、Cargo；Gradle、yarn 未测。
+- pi lane 只支持 macOS 与 Linux（没有 OS 沙箱的平台不派发）；沙箱行为目前只在 macOS 上实测过。pi lane 能写你共享的包缓存（包括 Maven 本地仓库、Go 模块缓存、`~/.cargo` 的 registry / git、`~/.cache`）——为了让 lane 装得了依赖，这是有意的取舍。它的代价不只是缓存可能被写坏：lane 可以在缓存里放进代码，等你之后在沙箱外运行 `mvn`、`cargo` 或 pre-commit 时被执行。实测能装：pip、uv、npm、pnpm、bun、Go、Maven 3.8、Cargo；Gradle、yarn 未测。
 - herdr、codex、pi 的行为会随版本变。各 skill 的 `references/known-behaviors.md` 里每条都标了日期与版本；版本不一致时只提醒一行，不阻塞。
 - 只支持作为插件安装；定时巡检活在当前 Claude 会话里，会话结束后用 `status` 恢复。
 

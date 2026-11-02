@@ -24,7 +24,9 @@ NODE_MIN_MAJOR=24          # pi-codex-goal's engines field
 executor="codex"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --executor) executor="${2:-}"; shift 2 ;;
+    --executor)
+      if [[ $# -lt 2 ]]; then printf '{"error":"--executor needs a value: codex or pi"}\n'; exit 2; fi
+      executor="$2"; shift 2 ;;
     *) printf '{"error":"unknown argument: %s"}\n' "$1"; exit 2 ;;
   esac
 done
@@ -32,7 +34,8 @@ if [[ "$executor" != "codex" && "$executor" != "pi" ]]; then
   printf '{"error":"--executor must be codex or pi"}\n'
   exit 2
 fi
-script_dir="${BASH_SOURCE[0]%/*}"
+script_dir="${BASH_SOURCE[0]}"
+if [[ "$script_dir" == */* ]]; then script_dir="${script_dir%/*}"; else script_dir="."; fi
 
 # --- Helpers ---
 

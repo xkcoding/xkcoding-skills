@@ -55,7 +55,7 @@ bash "${CLAUDE_SKILL_DIR}/scripts/doctor.sh" --executor pi
 
 **只碰自己的，只做可逆的。** 只操纵工作目录就是某条 lane worktree 的那个 agent；永不 `focus`（会抢用户的焦点），永不 `herdr server stop`。永不 commit 或 push base 分支；永不 force-push；永不 merge、archive、删 worktree、删分支——这些命令最后打印给用户，由人来跑。
 
-**边界靠机制，不靠模型自觉。** pi 自身没有沙箱，也不在调用工具前请求批准。lane 的边界是 lane-guard 扩展给的：shell 命令在 OS 沙箱里跑（可写的只有 lane worktree、主仓库 `.git`——`hooks` 与 `config` 除外——、各包管理器的缓存和 lane 自己的临时目录；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源），`write` / `edit` 越界即被拦并把原因交给模型；沙箱起不来时 shell 一律拒绝，不会裸跑。pi 进程本身和其他扩展在沙箱之外——确认页如实这么说，不夸大。"lane 不 push"仍然靠 goal 里写明，加上发布前检查 origin 上是不是已经有了这条分支。
+**边界靠机制，不靠模型自觉。** pi 自身没有沙箱，也不在调用工具前请求批准。lane 的边界是 lane-guard 扩展给的：shell 命令在 OS 沙箱里跑（可写的只有 lane worktree、主仓库 `.git`——`hooks` 与 `config` 除外——、各包管理器的缓存和 lane 自己的临时目录；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源），`write` / `edit` 越界即被拦并把原因交给模型，pi 自带的 `read` 等读取工具也读不到 `~/.ssh`、`~/.aws`、`~/.gnupg`；lane 改不了 worktree 的 `.git` 指针；沙箱起不来时 shell 一律拒绝，不会裸跑。lane 能写共享的包缓存，这意味着它能在缓存里放进你之后在沙箱外构建时会执行的代码——派发的是你愿意让它碰你依赖缓存的 change。pi 进程本身和其他扩展在沙箱之外——确认页如实这么说，不夸大。"lane 不 push"仍然靠 goal 里写明，加上发布前检查 origin 上是不是已经有了这条分支。
 
 **拿不准就交给人。** lane 在提问、有弹层在等人、goal 被人暂停或自判 blocked、同一个 worktree 里有两个 agent——把原话报给用户，不要替他回答。
 

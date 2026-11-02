@@ -112,7 +112,8 @@ def fail(msg, **extra):
 
 
 def git(args, cwd, timeout=90):
-    return run(["git"] + args, cwd=cwd, timeout=timeout)
+    # A lane's files are read here, outside its sandbox: never let a repository config start a program.
+    return run(["git", "-c", "core.fsmonitor=false"] + args, cwd=cwd, timeout=timeout)
 
 
 def git_out(args, cwd):
@@ -362,11 +363,15 @@ def pi_goal_probe(session):
                     entry = json.loads(line)
                 except ValueError:
                     continue
-                data = entry.get("data") or entry.get("details") or {}
-                goal = data.get("goal") or {}
+                if not isinstance(entry, dict) or entry.get("customType") != "pi-codex-goal":
+                    continue
+                data = entry.get("data") if isinstance(entry.get("data"), dict) else entry.get("details")
+                data = data if isinstance(data, dict) else {}
+                goal = data.get("goal") if isinstance(data.get("goal"), dict) else {}
                 status = data.get("status") or goal.get("status")
-                if entry.get("customType") == "pi-codex-goal" and status:
-                    last = (status, data.get("usage") or goal.get("usage") or {})
+                if isinstance(status, str) and status:
+                    usage = data.get("usage") or goal.get("usage")
+                    last = (status, usage if isinstance(usage, dict) else {})
     except OSError as exc:
         return {"probe": "unavailable", "reason": str(exc)}
     if not last:
@@ -425,6 +430,16 @@ def pi_startup_problem(text):
     return None
 
 
+SECOND_LEVEL = {"com", "net", "org", "edu", "gov", "ac", "co", "or", "ne", "go"}
+
+
+def registrable_domain(host):
+    """example.com for registry.example.com; example.com.cn for registry.example.com.cn. None for a bare suffix."""
+    parts = host.split(".")
+    n = 3 if len(parts) >= 3 and len(parts[-1]) == 2 and parts[-2] in SECOND_LEVEL else 2
+    return ".".join(parts[-n:]) if len(parts) > n else None
+
+
 def url_host(url):
     m = re.match(r"^(?:[a-z+]+://)?(?:[^@/]+@)?([^/:\s\"]+)", (url or "").strip())
     host = m.group(1).lower() if m else ""
@@ -449,9 +464,9 @@ def registry_hosts(cwd):
     hosts = []
     npm = url_host(first_line(["npm", "config", "get", "registry"], cwd))
     if npm:
-        parts = npm.split(".")
         # A mirror may serve tarballs from a sibling host (registry.npmmirror.com -> cdn.npmmirror.com).
-        hosts += [npm] + (["*." + ".".join(parts[-2:])] if len(parts) > 2 else [])
+        site = registrable_domain(npm)
+        hosts += [npm] + (["*." + site] if site and site != npm else [])
     for cmd in (["pip3", "config", "get", "global.index-url"], ["pip", "config", "get", "global.index-url"]):
         hosts.append(url_host(first_line(cmd, cwd)))
     rc, out, _ = run(["go", "env", "GOPROXY", "GOSUMDB"], cwd=cwd, timeout=30)
@@ -474,21 +489,22 @@ def registry_hosts(cwd):
 def pnpm_store(cwd):
     """The user's pnpm store, as pnpm reports it outside the sandbox (inside, pnpm would pick one in the worktree)."""
     store = first_line(["pnpm", "store", "path"], cwd)
-    if store and os.sep + "store" in store:
-        return store[:store.rindex(os.sep + "store") + len(os.sep + "store")]
+    if store and os.path.isabs(store):
+        # pnpm appends its store layout version to the configured store dir: .../pnpm/store/v11 -> .../pnpm/store
+        return os.path.dirname(store) if re.match(r"^v\d+$", os.path.basename(store)) else store
     home = os.path.expanduser("~")
     return store or (os.path.join(home, "Library", "pnpm", "store") if sys.platform == "darwin"
                      else os.path.join(home, ".local", "share", "pnpm", "store"))
 
 
-def pi_cache_dirs(cwd):
+def pi_cache_dirs(cwd, store):
     """Package-manager caches a lane may write, so it can install dependencies (known-behaviors P18, P21).
     Where the tool can say where its cache lives, ask it."""
     home = os.path.expanduser("~")
     dirs = [os.path.join(home, d) for d in (".npm", ".cache", os.path.join(".bun", "install", "cache"))]
     if sys.platform == "darwin":
         dirs.append(os.path.join(home, "Library", "Caches"))
-    dirs.append(pnpm_store(cwd))
+    dirs.append(store)
     gopath = (first_line(["go", "env", "GOPATH"], cwd) or os.path.join(home, "go")).split(os.pathsep)[0]
     dirs.append(os.path.join(gopath, "pkg"))  # module cache and checksum database
     m = re.search(r"<localRepository>\s*([^<\s]+)\s*</localRepository>", maven_settings())
@@ -514,15 +530,23 @@ def pi_policy(root, change, worktree, common_git_dir, strict):
     # The lane's own TMPDIR lives outside the worktree, which must stay clean.
     tmp_dir = os.path.join(lane_dir, change + "-tmp")
     os.makedirs(tmp_dir, exist_ok=True)
-    caches = pi_cache_dirs(worktree)
+    store = pnpm_store(worktree)
+    caches = pi_cache_dirs(worktree, store)
+    admin = real(git_out(["rev-parse", "--path-format=absolute", "--git-dir"], worktree))
+    if not admin or real(admin) == real(common_git_dir):
+        fail("cannot find this lane's worktree admin directory", worktree=worktree)
     policy = {
         "version": 1,
         "posture": "strict" if strict else "block",
         "tmpDir": tmp_dir,
         # Exported inside the sandbox before every command (known-behaviors P21).
-        "env": {"pnpm_config_store_dir": pnpm_store(worktree), "npm_config_store_dir": pnpm_store(worktree)},
+        "env": {"pnpm_config_store_dir": store, "npm_config_store_dir": store},
         "allowWrite": [real(worktree), common_git_dir, tmp_dir] + [d for i, d in enumerate(caches) if d not in caches[:i]],
-        "denyWrite": [os.path.join(common_git_dir, "hooks"), os.path.join(common_git_dir, "config")],
+        # The lane commits, but must never redirect git: the worktree's .git pointer and its admin files point
+        # git at a config; whoever rewrites them runs code in the next git command outside the sandbox.
+        "denyWrite": [os.path.join(common_git_dir, "hooks"), os.path.join(common_git_dir, "config"),
+                      os.path.join(real(worktree), ".git")]
+                     + [os.path.join(admin, f) for f in ("commondir", "gitdir", "config.worktree")],
         "denyRead": [os.path.join(home, d) for d in (".ssh", ".aws", ".gnupg")],
         "allowedDomains": domains,
     }
@@ -592,7 +616,10 @@ def lane_executor(agent, book_lane):
     if agent:
         kind = agent.get("agent")
         return kind if kind in EXECUTORS else None
-    rec = (book_lane or {}).get("executor")
+    if not book_lane:
+        return None
+    # A record from before executors were recorded can only be a codex lane.
+    rec = book_lane.get("executor", "codex")
     return rec if rec in EXECUTORS else None
 
 
@@ -968,7 +995,9 @@ def cmd_launch(args):
     # once more after the gap, and never send a goal to the first one.
     if problem:
         retried = problem
-        stop_agent(name, pane)
+        if not stop_agent(name, pane):
+            fail("the first {} came up without a model and did not stop; nothing else was started".format(
+                args.executor), change=args.change, agent_name=name, pane_tail=pane_tail(read_pane(pane)))
         time.sleep(ex["launch_gap"])
         name, err, text, state = start()
         problem = ex["startup_problem"](text) if state == "ready" else None
