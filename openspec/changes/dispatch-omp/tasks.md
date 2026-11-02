@@ -4,17 +4,17 @@
 
 ## 0. 前置
 
-- [ ] 0.1 从 main 拉 `feat/dispatch-omp` 分支，把本 change 目录作为首个 commit（`docs(openspec): propose dispatch-omp`）；验证：`git branch --show-current` 为 `feat/dispatch-omp`，`openspec validate dispatch-omp --strict` 通过
+- [x] 0.1 从 main 拉 `feat/dispatch-omp` 分支，把本 change 目录作为首个 commit（`docs(openspec): propose dispatch-omp`）；验证：`git branch --show-current` 为 `feat/dispatch-omp`，`openspec validate dispatch-omp --strict` 通过
 
 ## 1. 引擎：pi 行换成 omp 行（spec `dispatch-executors`；design D1、D2、D4、D5）
 
-- [ ] 1.1 沙箱策略相关的函数与常量去掉 `pi_` 前缀（`guard_policy`、`guard_cache_dirs`、`GUARD_DIR`、`PUBLIC_REGISTRIES` 等），删除 `pi_goal_probe`、`pi_layout` / `pi_pane_state` / `pi_input_box`、`pi_startup_problem`、`pi_launch_flags`、`pi_label`、`PI_GOAL_EXTENSION` 与 `EXECUTORS["pi"]`；验证：`grep -n "pi_\|PI_\|\"pi\"" lane.py` 无命中（`openspec` 等无关词除外），`python3 -m py_compile` 通过；`compare` 脚本确认 codex 的启动参数与 prompt 文本仍逐字节不变
+- [x] 1.1 沙箱策略相关的函数与常量去掉 `pi_` 前缀（`guard_policy`、`guard_cache_dirs`、`GUARD_DIR`、`PUBLIC_REGISTRIES` 等），删除 `pi_goal_probe`、`pi_layout` / `pi_pane_state` / `pi_input_box`、`pi_startup_problem`、`pi_launch_flags`、`pi_label`、`PI_GOAL_EXTENSION` 与 `EXECUTORS["pi"]`；验证：`grep -n "pi_\|PI_\|\"pi\"" lane.py` 无命中（`openspec` 等无关词除外），`python3 -m py_compile` 通过；`compare` 脚本确认 codex 的启动参数与 prompt 文本仍逐字节不变
 - [ ] 1.2 `EXECUTORS["omp"]`：`launch_flags(strict, common, policy, goal_text)` 产出 design D2 的参数（含 `--approval-mode yolo`、白名单、`--no-pty --no-lsp`、`-e <GUARD_DIR> --lane-policy`、`--goal`）；新增 `goal_at_launch: True`，`launch` 成功即记 `goal_sent_at` / `goal_mode`，`prompt --goal|--plain` 对这类 lane 拒绝；`launch` 记下 omp 默认模型；`launch_gap: 0`、无 `startup_problem`；验证：对构造的 lane 调 `launch_flags` 得到预期 argv；对 `goal_at_launch` 的 lane 调 `prompt --goal` 返回"已下达"
-- [ ] 1.3 omp 的 goal 探针（design D4）：解析 `mode_change.data.goal` 与 `goal-completed`，跳过 null goal，连字符规范为下划线；verdict 增加 `goal_dropped`（上报、不恢复，并入 settled）；验证：用 O5 形态构造的 JSONL 样例（只有 active；active→complete 后接 null 的 mode_change；只有 goal-completed；budget-limited；dropped；空文件；缺文件；格式异常行）得到 `active` / `complete` / `complete` / `budget_limited` / `dropped` / `unavailable` / `unavailable` / 不崩
-- [ ] 1.4 omp 的 `pane_state` / `input_box`（design D5）：先用 O12 已抓到的文本做样例（启动 banner + Working、工作中底栏转圈、空闲 `❯`、带标题的上边框、输入框有字）；`idle` / `done` 都视为不在工作；验证：样例分类为 `working` / `working` / `ready` / `ready` / `typed`，`input_box` 取出所发文字
+- [x] 1.3 omp 的 goal 探针（design D4）：解析 `mode_change.data.goal` 与 `goal-completed`，跳过 null goal，连字符规范为下划线；verdict 增加 `goal_dropped`（与 `goal_paused` / `goal_budget_limited` 相同：上报、不恢复，上报后转为 `awaiting_user`）；验证：用 O5 形态构造的 JSONL 样例（只有 active；active→complete 后接 null 的 mode_change；只有 goal-completed；budget-limited；dropped；空文件；缺文件；格式异常行）得到 `active` / `complete` / `complete` / `budget_limited` / `dropped` / `unavailable` / `unavailable` / 不崩
+- [x] 1.4 omp 的 `pane_state` / `input_box`（design D5）：先用 O12 已抓到的文本做样例（启动 banner + Working、工作中底栏转圈、空闲 `❯`、带标题的上边框、输入框有字）；`idle` / `done` 都视为不在工作；验证：样例分类为 `working` / `working` / `ready` / `ready` / `typed`，`input_box` 取出所发文字
 - [ ] 1.5 `record-verify` 的 `executor:` 行写 `omp <版本>` 并另起一行写模型；评审正文出处写 omp；验证：对 omp lane 生成的 `verify.md` 与评审正文里含 omp 版本与模型，除扩展名外不出现 `codex`、`pi`
-- [ ] 1.6 `doctor.sh`：`--executor pi` 换成 `--executor omp`（design D6），codex 分支输出不变；验证：本机 `--executor codex` 与改动前 diff 为空；`--executor omp` 报出 omp 版本、默认模型及其可用性、herdr omp 集成状态、仓库 skill 是否提交，`--executor pi` 返回用法错误
-- [ ] 1.7 `dispatch/sync-engine.sh` 目标改为 `dispatch/omp/scripts`，`git mv dispatch/pi dispatch/omp` 后同步引擎；验证：`dispatch/sync-engine.sh --check` 退出 0，`dispatch/pi/` 不存在
+- [x] 1.6 `doctor.sh`：`--executor pi` 换成 `--executor omp`（design D6），codex 分支输出不变；验证：本机 `--executor codex` 与改动前 diff 为空；`--executor omp` 报出 omp 版本、默认模型及其可用性、herdr omp 集成状态、仓库 skill 是否提交，`--executor pi` 返回用法错误
+- [x] 1.7 `dispatch/sync-engine.sh` 目标改为 `dispatch/omp/scripts`，`git mv dispatch/pi dispatch/omp` 后同步引擎；验证：`dispatch/sync-engine.sh --check` 退出 0，`dispatch/pi/` 不存在
 
 ## 2. lane-guard（spec `dispatch-executors` 文件工具；design D3）
 
