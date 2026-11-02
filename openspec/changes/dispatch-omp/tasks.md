@@ -18,7 +18,7 @@
 
 ## 2. lane-guard（spec `dispatch-executors` 文件工具；design D3）
 
-- [ ] 2.1 `read` 的目标是 `协议://` 时只放行 `skill`，`www.` 开头一律 block，其余沿用现有路径规则；拒绝原因说明"只能读本 lane 内的普通路径与 skill"；验证：用模拟扩展接口的确定性测试覆盖 `https://example.com`、`http://x`、`www.example.com`、`ssh://h/p`、`proc://1`、`vault://k`、`mcp://s/t`、`local://x`、`file:///etc/hosts` 均 block，`skill://openspec-apply-change`、`openspec/changes/x/tasks.md` 放行，此前 13 个守卫用例仍全部通过
+- [x] 2.1 `read` 的目标是 `协议://` 时只放行 `skill`，`www.` 开头一律 block，其余沿用现有路径规则；拒绝原因说明"只能读本 lane 内的普通路径与 skill"；验证：用模拟扩展接口的确定性测试覆盖 `https://example.com`、`http://x`、`www.example.com`、`ssh://h/p`、`proc://1`、`vault://k`、`mcp://s/t`、`local://x`、`file:///etc/hosts` 均 block，`skill://openspec-apply-change`、`openspec/changes/x/tasks.md` 放行，此前 13 个守卫用例仍全部通过
 
 ## 3. skill 与参考文档
 

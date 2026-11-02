@@ -1,7 +1,7 @@
 /**
- * lane-guard — the boundary of a /dispatch:pi lane.
+ * lane-guard — the boundary of a /dispatch:omp lane.
  *
- * - Shell: pi's `bash` tool and user `!` commands run inside @anthropic-ai/sandbox-runtime (Seatbelt on
+ * - Shell: the agent's `bash` tool and user `!` commands run inside @anthropic-ai/sandbox-runtime (Seatbelt on
  *   macOS, bubblewrap on Linux). Without a policy, or when the sandbox cannot start, every shell command is
  *   refused: nothing ever falls back to an unsandboxed shell.
  * - Files: `write` and `edit` may only touch the policy's writable roots minus its denied paths. The default
@@ -46,6 +46,19 @@ function toolPath(raw: unknown, cwd: string): string {
 	let p = String(raw ?? "").trim() || ".";
 	if (p === "~" || p.startsWith("~/")) p = homedir() + p.slice(1);
 	return canonical(isAbsolute(p) ? p : resolve(cwd, p));
+}
+
+// omp's read also fetches web pages and internal resources (ssh://, proc://, vault://, mcp://, ...) from its own
+// process, outside the sandbox. Only the skill:// resources that carry the OpenSpec apply skill may be read.
+const READABLE_SCHEMES = new Set(["skill"]);
+
+/** What makes a tool target something other than a plain path, or undefined for a plain path. */
+function nonPathTarget(raw: unknown): string | undefined {
+	const p = String(raw ?? "").trim();
+	const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):\/\//.exec(p);
+	if (scheme) return `${scheme[1].toLowerCase()}://`;
+	if (/^www\./i.test(p)) return "a web address";
+	return undefined;
 }
 
 function within(path: string, root: string): boolean {
@@ -142,7 +155,7 @@ function sandboxedOps(policy: LanePolicy | undefined): BashOperations {
 
 export default function (pi: ExtensionAPI) {
 	pi.registerFlag("lane-policy", {
-		description: "Sandbox and write policy of a /dispatch:pi lane (JSON written by lane.py)",
+		description: "Sandbox and write policy of a /dispatch:omp lane (JSON written by lane.py)",
 		type: "string",
 		default: "",
 	});
@@ -173,17 +186,25 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("tool_call", async (event, ctx) => {
 		const raw = (event.input as { path?: unknown }).path;
-		// pi's own file readers run outside the OS sandbox, so the sandbox's denyRead has to be enforced here.
-		if (["read", "grep", "find", "ls"].includes(event.toolName)) {
-			if (!policy) return { block: true, reason: `lane-guard has no policy: ${refusal}` };
+		const reader = ["read", "grep", "find", "ls"].includes(event.toolName);
+		if (!reader && event.toolName !== "write" && event.toolName !== "edit") return undefined;
+		if (!policy) return { block: true, reason: `lane-guard has no policy: ${refusal}` };
+		const other = nonPathTarget(raw);
+		if (other) {
+			if (reader && READABLE_SCHEMES.has(other.slice(0, -3))) return undefined;
+			return {
+				block: true,
+				reason: `${String(raw)} is ${other.endsWith("://") ? `a ${other} resource` : other}; this lane may only ${reader ? "read" : "write"} plain paths inside its writable locations${reader ? " (and skill:// resources)" : ""}`,
+			};
+		}
+		// The agent's own file readers run outside the OS sandbox, so the sandbox's denyRead is enforced here.
+		if (reader) {
 			const target = toolPath(raw, ctx.cwd);
 			// grep and find recurse, so searching an ancestor of a protected directory reads it too.
 			const recursive = event.toolName === "grep" || event.toolName === "find";
 			const hit = unreadable.find((d) => within(target, d) || (recursive && within(d, target)));
 			return hit ? { block: true, reason: `${target} reaches ${hit}, which this lane may not read` } : undefined;
 		}
-		if (event.toolName !== "write" && event.toolName !== "edit") return undefined;
-		if (!policy) return { block: true, reason: `lane-guard has no policy: ${refusal}` };
 		const target = toolPath(raw, ctx.cwd);
 		const inside = roots.some((r) => within(target, r)) && !denied.some((d) => within(target, d));
 		if (inside) return undefined;

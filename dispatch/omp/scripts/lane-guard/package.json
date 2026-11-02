@@ -1,8 +1,8 @@
 {
-  "name": "dispatch-pi-lane-guard",
+  "name": "dispatch-omp-lane-guard",
   "private": true,
   "version": "0.1.0",
-  "description": "Keeps a /dispatch:pi lane inside its worktree: OS sandbox for shell commands, path guard for file tools",
+  "description": "Keeps a /dispatch:omp lane inside its worktree: OS sandbox for shell commands, path guard for file tools",
   "type": "module",
   "pi": {
     "extensions": [
