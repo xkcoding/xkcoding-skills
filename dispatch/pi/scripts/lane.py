@@ -45,6 +45,7 @@ import time
 LANE_BRANCH_PREFIX = "change/"
 AGENT_NAME_MAX = 32
 START_TIMEOUT_MS = 120000
+SETTLE_S = 90
 MAX_PUBLISH_ATTEMPTS = 3
 
 # {skill} is how the executor names the OpenSpec apply skill (EXECUTORS[...]["skill"]).
@@ -878,8 +879,14 @@ def cmd_launch(args):
         name = sanitize_agent_name(args.change, taken)
         rc, data = jrun(["herdr", "agent", "start", name, "--kind", args.executor, "--pane", pane,
                          "--timeout", str(START_TIMEOUT_MS), "--"] + flags, timeout=START_TIMEOUT_MS // 1000 + 30)
-        text = read_pane(name) or read_pane(pane)
-        return name, ((data or {}).get("error") or {}).get("code"), text, ex["pane_state"](text)
+        # herdr can report readiness before the TUI is drawn (an extension still being fetched, say).
+        deadline = time.time() + SETTLE_S
+        while True:
+            text = read_pane(name) or read_pane(pane)
+            state = ex["pane_state"](text)
+            if state != "unknown" or time.time() > deadline:
+                return name, ((data or {}).get("error") or {}).get("code"), text, state
+            time.sleep(1)
 
     name, err, text, state = start()
     problem = ex["startup_problem"](text) if ex["startup_problem"] and state == "ready" else None

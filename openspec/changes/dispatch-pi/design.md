@@ -32,6 +32,7 @@ herdr 0.9.0、pi 1.3.0（goal 轮）/ 1.4.0（沙箱与守卫轮）、pi-codex-g
 | P16 | （2026-11-02，pi 1.4.0，临时 `PI_CODING_AGENT_DIR`、空 `auth.json`）print 模式读不到 key 时打印 `No API key found for the selected model.` 并退出 1；**交互模式不退出**：界面照常就绪，底栏统计行为 `0.0%/0 (auto)`、模型位显示 `unknown`，发 prompt 后输出 `Error: No API key found for the selected model.`，lane 回到空闲 |
 | P18 | （2026-11-02，sandbox-runtime 0.0.26）可写范围只有工作目录时，沙箱里的 `npm install` 失败：npm 要写 `~/.npm` 缓存（报 `sudo chown -R … ~/.npm`），依赖装不上 |
 | P19 | （2026-11-02，pi 1.4.0，herdr 0.9.0）`ctx.ui.confirm` 弹出时默认高亮 `→ Yes`，样式同 P17（`↑↓ navigate  enter select …`）；弹层等人期间 herdr 报的 agent 状态是 `working`，不是 `blocked` |
+| P20 | （2026-11-02，herdr 0.9.0 + pi 1.4.0）pi 启动时还要拉扩展或工具（如首次 `-e npm:` 或新配置目录下载 fd）时，`herdr agent start` 先于 TUI 画出就报就绪；`launch` 因此在 90 秒内等 pane 状态不再是 `unknown`。真实配置下 4 条 lane 依次启动：就绪间隔约 7 秒、goal 间隔约 4.3 秒，全部一次成功 |
 | P17 | （同上）pi 的项目信任弹层：分隔线之间是 `Trust project folder?`、路径、说明，选项行以 `→ ` 标出高亮项（`Trust` / `Trust parent folder (…)` / `Trust (this session only)` / `Do not trust` / `Do not trust (this session only)`），末行 `↑↓ navigate  enter select  escape/ctrl+c cancel` |
 
 ## Goals / Non-Goals

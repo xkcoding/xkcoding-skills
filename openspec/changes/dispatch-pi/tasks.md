@@ -40,5 +40,5 @@
 - [x] 5.2 pi lane 的边界探针：在 lane 里让 pi 依次做 worktree 内 commit、bash 写主 checkout、bash 写 `.git/hooks`、`write` 写主 checkout、`edit` 改 `.git/config`、经 `/tmp` 别名写 worktree、curl 未放行域名、npm 源可达、`npm install` 一个小包；再把策略文件改坏重启 lane 让 pi 跑任意 bash；验证：commit / 别名写入 / npm 源 / `npm install` 成功，其余全部被拒且无文件变化，改坏策略后 bash 被拒并给出原因
 - [x] 5.3 `--strict` 的 pi lane：诱发一次越界 `write`，抓取确认框的 pane 文本，据此补 `pane_state` 的 `dialog` 规则并写进 known-behaviors；验证：补规则后 `list` 对该 lane 给出 `blocked`，lane 在人工拒绝后继续工作
 - [ ] 5.4 混跑：同一临时仓库一条 codex lane、一条 pi lane 同时跑完；验证：分别从 `dispatch/codex/scripts/lane.py` 与 `dispatch/pi/scripts/lane.py` 执行 `list`，两份输出逐字相同；codex lane 的 verdict 序列与改动前一致（goal 走到 `complete`、`claims_done`）
-- [ ] 5.5 无模型重启与并发派发：在临时仓库里对一条 lane 用临时 `PI_CODING_AGENT_DIR`（空 `auth.json`，不复制凭据）模拟"无模型"启动，确认 `launch` 先重启一次、再以 `ok:false` 报无模型且未发 goal；再在真实配置下一次派发 4 条 pi lane；验证：4 条 lane 全部到 `ready`、各自完成 goal，`list` 中无 `no_agent`，相邻两次 launch 的就绪时间间隔不少于 4 秒
+- [x] 5.5 无模型重启与并发派发：在临时仓库里对一条 lane 用临时 `PI_CODING_AGENT_DIR`（空 `auth.json`，不复制凭据）模拟"无模型"启动，确认 `launch` 先重启一次、再以 `ok:false` 报无模型且未发 goal；再在真实配置下一次派发 4 条 pi lane；验证：4 条 lane 全部到 `ready`、各自完成 goal，`list` 中无 `no_agent`，相邻两次 launch 的就绪时间间隔不少于 4 秒
 - [ ] 5.6 清理：先 `herdr worktree remove --force`（或关闭 workspace）再删临时目录，删对应的 pi session；验证：`herdr workspace list` 无实验 workspace，`/tmp` 无实验目录
