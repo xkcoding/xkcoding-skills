@@ -75,7 +75,7 @@ pi 自身没有沙箱，也不在调用工具前请求批准；pi lane 的边界
 
 | 姿态 | 越出 lane 的文件写入 | shell 命令 |
 |---|---|---|
-| 默认 | 拦下，原因交给模型，lane 不停 | 一律在 OS 沙箱里（macOS Seatbelt / Linux bubblewrap）：只可写 lane worktree、主仓库 `.git`（`hooks`、`config` 除外）和包管理器缓存（`~/.npm`、`~/.cache`、macOS 的 `~/Library/Caches`）；网络只放行常见包源与本机配置的 npm / pip 源；沙箱起不来时一律拒绝，不会裸跑 |
+| 默认 | 拦下，原因交给模型，lane 不停 | 一律在 OS 沙箱里（macOS Seatbelt / Linux bubblewrap）：只可写 lane worktree、主仓库 `.git`（`hooks`、`config` 除外）、各包管理器缓存（npm、pnpm store、bun、pip / uv、`$GOPATH/pkg`、Maven 本地仓库、`~/.cargo/registry` 与 `git`）和 lane 私有的临时目录；网络只放行公共包源与本机为 npm / pip / Go / Maven / Cargo 配置的源；不走代理的工具由 lane-guard 在沙箱里配好（Node 的 `fetch`、JVM、Maven 的 settings）；沙箱起不来时一律拒绝，不会裸跑 |
 | `--strict` | 弹给你批准，默认选项是拒绝；Claude 只转达，不代答 | 同上 |
 
 pi 进程本身与它加载的其他扩展在沙箱之外；lane 里关掉了 MCP。lane 启动时的项目信任只对那一次运行生效，goal 扩展（固定版本的 `pi-codex-goal`）也只为那一次运行加载——你的 pi 配置不会被改动。多条 pi lane 会逐条启动、彼此错开几秒：多个 pi 同时启动会抢 pi 自己的配置锁，抢输的会读不到模型。
@@ -133,7 +133,7 @@ lane.py forge --forget                                 # 忘掉
 - 新 worktree 里没有未跟踪的文件（`node_modules`、`.env`）。依赖由 lane 自己装；密钥不会被复制过去。
 - 多个 change 改同一个代码文件：合并时按普通 git 冲突处理，最好在 propose 阶段就拆开。多个 change 改同一个 capability spec：按 OpenSpec 官方说法，在 archive 时以 `specs/` 冲突的形式出现。
 - 所有 codex lane 共用一个 codex 账号，所有 pi lane 共用 pi 里同一份模型凭据，限流窗口各自共享。
-- pi lane 只支持 macOS 与 Linux（没有 OS 沙箱的平台不派发）；沙箱行为目前只在 macOS 上实测过。pi lane 能写你共享的包缓存——为了让 lane 装得了依赖，这是有意的取舍。
+- pi lane 只支持 macOS 与 Linux（没有 OS 沙箱的平台不派发）；沙箱行为目前只在 macOS 上实测过。pi lane 能写你共享的包缓存（包括 Maven 本地仓库与 Go 模块缓存）——为了让 lane 装得了依赖，这是有意的取舍。实测能装：pip、uv、npm、pnpm、bun、Go、Maven 3.8、Cargo；Gradle、yarn 未测。
 - herdr、codex、pi 的行为会随版本变。各 skill 的 `references/known-behaviors.md` 里每条都标了日期与版本；版本不一致时只提醒一行，不阻塞。
 - 只支持作为插件安装；定时巡检活在当前 Claude 会话里，会话结束后用 `status` 恢复。
 

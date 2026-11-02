@@ -21,6 +21,8 @@ import { createBashTool } from "@earendil-works/pi-coding-agent";
 interface LanePolicy {
 	version: number;
 	posture: "block" | "strict";
+	tmpDir?: string;
+	env?: Record<string, string>;
 	allowWrite: string[];
 	denyWrite: string[];
 	denyRead: string[];
@@ -49,14 +51,50 @@ function loadPolicy(file: string): LanePolicy {
 		throw new Error("malformed lane policy");
 	}
 	if (p.posture !== "block" && p.posture !== "strict") throw new Error(`unknown posture ${p.posture}`);
+	if (p.tmpDir !== undefined && typeof p.tmpDir !== "string") throw new Error("tmpDir must be a path");
+	for (const [k, v] of Object.entries(p.env ?? {})) {
+		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || typeof v !== "string") throw new Error(`bad env entry ${k}`);
+	}
 	return p;
 }
 
-function sandboxedOps(): BashOperations {
+function shellQuote(s: string): string {
+	return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+// Runs inside the sandbox before every command, where the sandbox's proxy is known (known-behaviors P21):
+// TMPDIR moves to the lane's own temp dir; Node's built-in fetch is told to use the proxy; the JVM gets an
+// IPv4 socket (the proxy is unreachable over its default IPv6 one) and a writable java.io.tmpdir; Maven, whose
+// HTTP transport ignores the JVM's proxy properties, gets a global settings file holding only <proxies>.
+function prelude(tmpDir: string | undefined, env: Record<string, string> = {}): string {
+	const exports = Object.entries(env).map(([k, v]) => `export ${k}=${shellQuote(v)}\n`).join("");
+	if (!tmpDir) return `${exports}export NODE_USE_ENV_PROXY=1\n`;
+	const tmp = shellQuote(tmpDir);
+	const settings = shellQuote(`${tmpDir}/maven-proxy-settings.xml`);
+	const proxy = (id: string, protocol: string) =>
+		`<proxy><id>${id}</id><active>true</active><protocol>${protocol}</protocol><host>127.0.0.1</host><port>%s</port></proxy>`;
+	return exports + [
+		`export TMPDIR=${tmp} NODE_USE_ENV_PROXY=1`,
+		`export JAVA_TOOL_OPTIONS="-Djava.net.preferIPv4Stack=true -Djava.io.tmpdir=$TMPDIR\${JAVA_TOOL_OPTIONS:+ $JAVA_TOOL_OPTIONS}"`,
+		`if [ -n "\${HTTPS_PROXY:-}" ]; then`,
+		`  __lane_port=\${HTTPS_PROXY##*:}; __lane_port=\${__lane_port%%/*}`,
+		`  __lane_gs=${settings}`,
+		`  printf '<settings><proxies>${proxy("lane-https", "https")}${proxy("lane-http", "http")}</proxies></settings>\\n' "$__lane_port" "$__lane_port" > "$__lane_gs"`,
+		// MAVEN_ARGS is word-split by Maven's launcher (3.9+, e.g. ./mvnw): no quotes inside it.
+		`  export MAVEN_ARGS="-gs $__lane_gs\${MAVEN_ARGS:+ $MAVEN_ARGS}"`,
+		`  mvn() { MAVEN_ARGS= command mvn -gs "$__lane_gs" "$@"; }`,
+		`  export __lane_gs`,
+		`  export -f mvn`,
+		`fi`,
+		"",
+	].join("\n");
+}
+
+function sandboxedOps(policy: LanePolicy | undefined): BashOperations {
 	return {
 		async exec(command, cwd, { onData, signal, timeout }) {
 			if (!existsSync(cwd)) throw new Error(`Working directory does not exist: ${cwd}`);
-			const wrapped = await SandboxManager.wrapWithSandbox(command);
+			const wrapped = await SandboxManager.wrapWithSandbox(prelude(policy?.tmpDir, policy?.env) + command);
 			return new Promise((resolvePromise, reject) => {
 				const child = spawn("bash", ["-c", wrapped], { cwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
 				const kill = () => {
@@ -114,14 +152,14 @@ export default function (pi: ExtensionAPI) {
 		label: "bash (lane sandbox)",
 		async execute(id, params, signal, onUpdate) {
 			if (refusal) throw new Error(`lane-guard refused the shell command: ${refusal}`);
-			const sandboxed = createBashTool(cwd, { operations: sandboxedOps() });
+			const sandboxed = createBashTool(cwd, { operations: sandboxedOps(policy) });
 			return sandboxed.execute(id, params, signal, onUpdate);
 		},
 	});
 
 	pi.on("user_bash", () => {
 		if (refusal) throw new Error(`lane-guard refused the shell command: ${refusal}`);
-		return { operations: sandboxedOps() };
+		return { operations: sandboxedOps(policy) };
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -131,7 +169,7 @@ export default function (pi: ExtensionAPI) {
 		const target = canonical(isAbsolute(raw) ? raw : resolve(ctx.cwd, raw));
 		const inside = roots.some((r) => within(target, r)) && !denied.some((d) => within(target, d));
 		if (inside) return undefined;
-		const reason = `${target} is outside this lane's writable paths (the lane worktree, the repository's git directory except its hooks and config, and package-manager caches)`;
+		const reason = `${target} is outside this lane's writable paths (the lane worktree, the repository's git directory except its hooks and config, package-manager caches, and the lane's temp directory)`;
 		if (policy.posture === "strict" && ctx.hasUI) {
 			// "Deny" comes first so that a stray enter can never approve the write.
 			const choice = await ctx.ui.select(`lane-guard: allow ${event.toolName} outside the lane?\n  ${target}`, [

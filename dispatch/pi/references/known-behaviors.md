@@ -31,7 +31,12 @@
 ## lane-guard（sandbox-runtime 0.0.26）
 
 - (2026-11-02, pi 1.4.0, macOS) 可写 = worktree + 主仓库 `.git` + 包缓存，denyWrite = `.git/hooks`、`.git/config` 时：worktree 内 `git commit` 成功；bash 写主 checkout、写 `.git/hooks` 均 `Operation not permitted`；`write` 越界、`edit` 改 `.git/config` 被守卫拦下且模型收到原因、未绕；经 `/tmp` 软链别名写 worktree 成功；未放行域名 `CONNECT tunnel failed, response 403`；本机 npm 源 200；`npm install` 成功。
-- (2026-11-02, sandbox-runtime 0.0.26) 可写范围只有工作目录时 `npm install` 失败：要写 `~/.npm` 缓存。所以策略里放行了 `~/.npm`、`~/.cache`、macOS 的 `~/Library/Caches`。
+- (2026-11-02, sandbox-runtime 0.0.26) 可写范围只有工作目录时 `npm install` 失败：要写 `~/.npm` 缓存。所以策略里放行了包管理器缓存。
+- (2026-11-02, sandbox-runtime 0.0.26, macOS) 只放行 `~/.npm` / `~/.cache` / `~/Library/Caches` 时，各工具各卡在一处：pnpm（Node 内置 `fetch` 默认不读 `HTTPS_PROXY`，报 `fetch failed`；store 在 `~/Library/pnpm/store`）、bun（`$TMPDIR` 不可写；npmmirror 的包文件在 `cdn.npmmirror.com`）、Go（`goproxy.cn` 403；`$GOPATH/pkg` 里的模块缓存与 `sumdb` 不可写）、Cargo（`index.crates.io` 403；`~/.cargo/registry` 不可写）、Maven 3.8.6（`~/.m2/repository` 不可写；镜像 403；wagon 不读 JVM 的 `http(s).proxyHost`，只认 settings 的 `<proxies>`；JVM 默认 IPv6 socket 连不上沙箱代理，`Operation not permitted`，要 `-Djava.net.preferIPv4Stack=true`）。沙箱里的代理是 `HTTP(S)_PROXY=http://localhost:<port>`。
+- (2026-11-02, pi 1.4.0 + lane-guard，经 pi 的 `!` 命令在真实 lane 里装各一个本机缓存里没有的依赖) 全部成功：pip 25.0.1（python 3.14 venv）、uv 0.6.5、npm 11.19.1、pnpm 11.15.1、bun 1.3.6、go 1.26.3（GOPROXY=goproxy.cn）、Maven 3.8.6 + OpenJDK 21（aliyun 镜像，`mvn` 为 lane-guard 导出的带 `-gs` 的函数，3.5 秒）、cargo 1.91.1。worktree 里除探针目录外无改动。
+- (2026-11-02, pnpm 11.15.1) 沙箱里 pnpm 默认把 store 建在 worktree 的 `.pnpm-store/`（沙箱外同一项目用的是 `~/Library/pnpm/store`），会让工作区变脏。pnpm 11 只认 `pnpm_config_store_dir`，`npm_config_store_dir` 无效；lane-guard 两个都导出。
+- (2026-11-02, bun 1.3.6) 装一个未缓存的小包 3.4 秒；`bun init` 会顺带拉 TypeScript 等依赖，在沙箱里用了约 6 分钟。
+- (2026-11-02, sandbox-runtime 0.0.26) 沙箱里 `git init`（含 `cargo init` 默认的那次）失败：`.git/hooks` 被强制禁写。lane 本就在现成仓库里，`cargo init` 要加 `--vcs none`。
 - (2026-11-02, pi 1.4.0) 策略文件损坏时底栏显示 `⛔ lane-guard: shell refused (…)`，bash 调用返回 `lane-guard refused the shell command: …`，没有任何命令在沙箱外执行。
 - (2026-11-02, pi 1.4.0) `ctx.ui.confirm` 默认高亮 `→ Yes`，一个多余的回车就会放行；所以 `--strict` 的询问改用 `ctx.ui.select(…, ["Deny", "Allow"])`。实测：弹层样式同信任框（`↑↓ navigate  enter select …`），回车 = Deny，模型收到 "a human declined it" 后照常继续。
 - (2026-10-29, pi 官方示例) pi 自带的 sandbox 示例只替换 `bash`；`write` 越界会成功。所以守卫必须单独拦 `write` / `edit`。示例的配置合并按键浅合并，而且会读 `<cwd>/.pi/sandbox.json`——lane-guard 只读 `--lane-policy`。
@@ -49,3 +54,5 @@
 - `--offline` 能否在 goal 扩展已缓存时省掉启动期的网络请求、又不妨碍首次拉取。
 - 长任务下 context 占满、compaction、provider 限流时 pi lane 的表现。
 - Linux（bubblewrap）上的 lane-guard：以上沙箱事实都只在 macOS 上测过。
+- Gradle、yarn（本机 yarn 是未激活的 corepack shim）没测过；Maven 3.9+ 的 `./mvnw` 经 `MAVEN_ARGS` 带 `-gs` 的路径没测过（本机是 3.8.6，只验证了 `mvn` 函数）。
+- lane 里第一次 `go get` 用了 8 分钟以上，之后同样的操作 29 秒；原因没查实（猜测首次拉 checksum 数据库或某次连接超时）。

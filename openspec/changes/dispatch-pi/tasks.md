@@ -42,3 +42,10 @@
 - [x] 5.4 混跑：同一临时仓库一条 codex lane、一条 pi lane 同时跑完；验证：分别从 `dispatch/codex/scripts/lane.py` 与 `dispatch/pi/scripts/lane.py` 执行 `list`，两份输出逐字相同；codex lane 的 verdict 序列与改动前一致（goal 走到 `complete`、`claims_done`）
 - [x] 5.5 无模型重启与并发派发：在临时仓库里对一条 lane 用临时 `PI_CODING_AGENT_DIR`（空 `auth.json`，不复制凭据）模拟"无模型"启动，确认 `launch` 先重启一次、再以 `ok:false` 报无模型且未发 goal；再在真实配置下一次派发 4 条 pi lane；验证：4 条 lane 全部到 `ready`、各自完成 goal，`list` 中无 `no_agent`，相邻两次 launch 的就绪时间间隔不少于 4 秒
 - [x] 5.6 清理：先 `herdr worktree remove --force`（或关闭 workspace）再删临时目录，删对应的 pi session；验证：`herdr workspace list` 无实验 workspace，`/tmp` 无实验目录
+
+## 6. 更多包管理器（spec `dispatch-executors` 沙箱；design D4、P21）
+
+- [x] 6.1 `lane.py` 的 pi 策略：按 design D4 列出各生态的可写缓存（工具存在时用其自报路径）、创建并放行 lane 私有临时目录（策略字段 `tmpDir`）、白名单并入 npm（含同注册域名 `*.`）/ pip / Go / Maven / Cargo 的用户配置源与公共源；验证：在本机生成的策略里能看到 `~/Library/pnpm/store`、`~/go/pkg`、`~/.m2/repository`、`~/.cargo/registry`、`goproxy.cn`、`*.npmmirror.com`、`maven.aliyun.com`、`index.crates.io`，`tmpDir` 目录存在
+- [x] 6.2 lane-guard 在每条沙箱命令前设置 `TMPDIR`、`NODE_USE_ENV_PROXY`、`JAVA_TOOL_OPTIONS`，生成 Maven 代理 settings 并导出 `mvn` 函数与 `MAVEN_ARGS`；验证：`PI_OFFLINE=1 pi --no-extensions -e <lane-guard> --help` 仍能加载
+- [x] 6.3 真跑：在一条 pi lane 里用 pi 的 `!` 命令（走 lane-guard 的沙箱、不调模型）逐个用 pip（venv）、uv、npm、pnpm、bun、Go、Maven、Cargo 装一个本机缓存里没有的依赖；验证：八项都成功，`git status` 里只有各自的探针子目录，`known-behaviors.md` 记下结果与未覆盖项（Gradle、yarn 未测）
+

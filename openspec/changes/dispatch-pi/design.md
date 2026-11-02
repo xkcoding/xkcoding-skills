@@ -33,6 +33,7 @@ herdr 0.9.0、pi 1.3.0（goal 轮）/ 1.4.0（沙箱与守卫轮）、pi-codex-g
 | P18 | （2026-11-02，sandbox-runtime 0.0.26）可写范围只有工作目录时，沙箱里的 `npm install` 失败：npm 要写 `~/.npm` 缓存（报 `sudo chown -R … ~/.npm`），依赖装不上 |
 | P19 | （2026-11-02，pi 1.4.0，herdr 0.9.0）`ctx.ui.confirm` 弹出时默认高亮 `→ Yes`，样式同 P17（`↑↓ navigate  enter select …`）；弹层等人期间 herdr 报的 agent 状态是 `working`，不是 `blocked` |
 | P20 | （2026-11-02，herdr 0.9.0 + pi 1.4.0）pi 启动时还要拉扩展或工具（如首次 `-e npm:` 或新配置目录下载 fd）时，`herdr agent start` 先于 TUI 画出就报就绪；`launch` 因此在 90 秒内等 pane 状态不再是 `unknown`。真实配置下 4 条 lane 依次启动：就绪间隔约 7 秒、goal 间隔约 4.3 秒，全部一次成功 |
+| P21 | （2026-11-02，sandbox-runtime 0.0.26，同一策略）只放行 `~/.npm` / `~/.cache` / `~/Library/Caches` 时：pip（venv）、uv、npm 能装；pnpm 失败（Node 内置 `fetch` 默认不读 `HTTPS_PROXY`，需 `NODE_USE_ENV_PROXY=1`；store 在 `~/Library/pnpm`）；bun 失败（`$TMPDIR` 不可写；npmmirror 的包文件在 `cdn.npmmirror.com`）；Go 失败（`goproxy.cn` 403；`~/go/pkg` 含 sumdb 不可写）；Cargo 失败（`index.crates.io` 403；`~/.cargo/registry` 不可写）；Maven 失败（`~/.m2/repository` 不可写；镜像 403；Maven 3.8 的 wagon 不读 JVM 代理属性、只认 settings 的 `<proxies>`；JVM 默认 IPv6 socket 连不上沙箱代理，需 `-Djava.net.preferIPv4Stack=true`）。逐项补上后七种全部装成。沙箱内 `git init` 失败（sandbox-runtime 强制禁写 `.git/hooks`）。经 lane-guard 在真实 lane 里复测（pi `!` 命令）：pip、uv、npm、pnpm、bun、Go、Maven、Cargo 八项都装成；沙箱内 pnpm 11 默认把 store 建在 worktree 的 `.pnpm-store/`（沙箱外则用用户 store），只认 `pnpm_config_store_dir` |
 | P17 | （同上）pi 的项目信任弹层：分隔线之间是 `Trust project folder?`、路径、说明，选项行以 `→ ` 标出高亮项（`Trust` / `Trust parent folder (…)` / `Trust (this session only)` / `Do not trust` / `Do not trust (this session only)`），末行 `↑↓ navigate  enter select  escape/ctrl+c cancel` |
 
 ## Goals / Non-Goals
@@ -86,7 +87,9 @@ herdr agent start <name> --kind pi --pane <p> -- \
 - 策略只从 `--lane-policy <file>` 读，不读 `<cwd>/.pi/sandbox.json` 或全局 `sandbox.json`（P13 的合并规则会让仓库里的文件改写策略）。策略文件由 `lane.py launch` 生成在 `~/.claude/dispatch/<repo-id>/`，内容：`allowWrite`（worktree、`git rev-parse --git-common-dir`、包管理器缓存 `~/.npm`、`~/.cache`、macOS 的 `~/Library/Caches`——P18，用户选择放行真实缓存而不是给每条 lane 私有缓存）、`denyWrite`（common dir 下的 `hooks`、`config`）、`denyRead`（`~/.ssh`、`~/.aws`、`~/.gnupg`）、`allowedDomains`、`posture`。
 - **fail closed**：策略文件缺失、解析失败或 sandbox 初始化失败时，替换后的 `bash` 与 `user_bash` 直接返回错误，不回落到本地 bash（官方示例在初始化失败时会回落）。
 - `tool_call` 拦 `write` / `edit`（P12 的做法），可写根与沙箱同源；`denyWrite` 同样生效（否则 `edit` 能改 `.git/config`）。默认姿态 `block` + 原因；`--strict` 用 `ctx.ui.confirm` 弹给人。
-- 网络白名单：官方示例的默认公共源（npm、yarn、pypi、github）加 `files.pythonhosted.org`，再加从用户配置读出的包源 host（`npm config get registry`、`pip config get global.index-url`，取得到才加）。本机 npm 源就是 npmmirror，只用公共列表会让 lane 装不了依赖。
+- 网络白名单：公共源（npm、yarn、pypi + `files.pythonhosted.org`、github、`proxy.golang.org` + `sum.golang.org`、Maven Central、crates.io 的 index / static）加从用户配置读出的源：`npm config get registry`（连同同一注册域名下的 `*.`，npmmirror 的包文件在 `cdn.` 子域）、`pip config get global.index-url`、`go env GOPROXY` / `GOSUMDB`、`~/.m2/settings.xml` 里的 `<url>`、`~/.cargo/config.toml` 里的源替换（P21）。
+- 可写的包缓存按生态列：`~/.npm`、`~/.cache`、macOS `~/Library/Caches`、pnpm store（`pnpm store path` 的 `store` 目录）、`~/.bun/install/cache`、`$GOPATH/pkg`（模块缓存与 sumdb）、Maven 本地仓库（`~/.m2/repository` 或 settings 的 `<localRepository>`）、`$CARGO_HOME/registry` 与 `git`；另加每条 lane 私有的临时目录 `~/.claude/dispatch/<repo-id>/<change>-tmp`（不放进 worktree，否则工作区会脏）。
+- 沙箱内的环境（lane-guard 在每条 shell 命令前设置）：先导出策略里的 `env`（`lane.py` 在沙箱外算好的值，目前是 `pnpm_config_store_dir` / `npm_config_store_dir` = 用户的 pnpm store）；`TMPDIR` 指向 lane 临时目录；`NODE_USE_ENV_PROXY=1`；`JAVA_TOOL_OPTIONS` 加 `-Djava.net.preferIPv4Stack=true` 与 `java.io.tmpdir`；生成只含 `<proxies>`（指向沙箱代理）的 Maven 全局 settings，`mvn` 包成带 `-gs` 的 shell 函数（`export -f`，子进程也生效），`MAVEN_ARGS` 同时带上供 3.9+ 的 `./mvnw` 使用。代价：lane 内 `mvn` 的安装目录级 settings 被这份文件取代（用户级 `~/.m2/settings.xml` 照常合并）。
 
 替代方案：
 - 用社区包（pi-better-sandbox、@erichll/pi-sandbox、@buyong/pi-codex-auto-review）：前者只能经 TUI 开启且对 `.git` 的放行粒度过粗；中者只管 bash 且要求 pi ≥ 1.4.0 加 pi-subagents；后者明说不是 OS 沙箱、上线三周。安全边界不交给这些包。
@@ -129,7 +132,7 @@ P14 / P15 说明多个 pi 同时启动会在 pi 自己的配置锁上互相挤�
 - [两份引擎副本漂移] → `sync-engine.sh --check` + CLAUDE.md 规范；任务里把它列为验收步骤。
 - [pi-codex-goal 是第三方包，pi 每次启动从 npm 拉] → 钉死版本；拉取失败按启动失败处理（spec 已写）；known-behaviors 记下版本与来源。
 - [sandbox-runtime 是 research preview（0.0.x）] → 钉死版本；fail closed；升级需重跑 P10 那组探针。
-- [lane 能写用户共享的包缓存（P18 后的取舍）] → 只放行缓存目录本身；npm 缓存按内容寻址有完整性校验，pip 缓存没有，被写坏的风险由用户接受。
+- [lane 能写用户共享的包缓存（P18、P21 后的取舍）] → 只放行缓存目录本身；npm 缓存按内容寻址有完整性校验，pip / Maven 本地仓库 / Go 模块缓存的写坏风险由用户接受（2026-11-02 用户确认）。
 - [网络白名单过窄导致 lane 装不了依赖] → 自动并入用户已配的包源；被拒时模型拿到 403，lane 会报阻塞，按现有"上报"路径交给人。
 - [pi 的 confirm 弹层样式未实测，`--strict` 下可能被识别为 `unknown`] → `unknown` 本就不发任何输入；任务里安排一次实测并据此补规则。
 - [pi 进程本身与其他扩展在沙箱外] → 文档如实写明；lane 里关 MCP；确认页的姿态句不夸大。

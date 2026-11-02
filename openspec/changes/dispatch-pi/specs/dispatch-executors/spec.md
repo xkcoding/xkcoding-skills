@@ -45,15 +45,15 @@ The lane mechanics shipped in the `codex` and `pi` skill directories SHALL be id
 - **THEN** the repository's sync check SHALL fail and name the files that differ
 
 ### Requirement: A pi lane's shell runs inside an operating-system sandbox
-Every shell command a pi lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree, the repository's common git directory excluding that directory's hooks and config, and the user's package-manager cache directories. The sandbox SHALL deny reading the user's SSH, cloud and GnuPG credential directories. Outbound network access from the sandbox SHALL be limited to an allowlist of package-registry hosts. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
+Every shell command a pi lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree, the repository's common git directory excluding that directory's hooks and config, the user's package-manager caches, and a temporary directory private to the lane. The sandbox SHALL deny reading the user's SSH, cloud and GnuPG credential directories. Outbound network access from the sandbox SHALL be limited to an allowlist of package-registry hosts: the public registries and the registries and mirrors the user configured for npm, pip, Go, Maven and Cargo. Package managers that do not use the sandbox's proxy on their own SHALL be configured inside the sandbox to use it. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
 
 #### Scenario: Commit from the lane
 - **WHEN** a pi lane runs `git commit` in its worktree
 - **THEN** the commit SHALL succeed
 
 #### Scenario: Installing dependencies
-- **WHEN** a pi lane runs a package install whose registry is on the allowlist
-- **THEN** the install SHALL succeed, writing only to the worktree and the package-manager caches
+- **WHEN** a pi lane installs a dependency with npm, pnpm, bun, pip, uv, Go, Maven or Cargo from a registry on the allowlist
+- **THEN** the install SHALL succeed, writing only to the worktree, the package-manager caches and the lane's temporary directory, and leaving the worktree's other files untouched
 
 #### Scenario: Write outside the lane through the shell
 - **WHEN** a pi lane's shell command writes to the main checkout, the home directory, or the common git directory's hooks or config

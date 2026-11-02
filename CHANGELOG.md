@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **dispatch:pi**（新 Skill，`dispatch` 插件）：`/dispatch:pi` 把已 propose 的 OpenSpec change 派发给 pi，流程与 `/dispatch:codex` 相同（派发 → 巡检 → 亲手验收 → `verify.md` → push → draft 评审请求）
-  - lane-guard 扩展给出 lane 的边界：shell 在 sandbox-runtime（macOS Seatbelt / Linux bubblewrap）里跑，只可写 lane worktree、主仓库 `.git`（`hooks` / `config` 除外）与包管理器缓存，网络只放行常见包源与本机配置的 npm / pip 源，沙箱起不来时一律拒绝；`write` / `edit` 越界即拦，`--strict` 下改为问人且默认拒绝
+  - lane-guard 扩展给出 lane 的边界：shell 在 sandbox-runtime（macOS Seatbelt / Linux bubblewrap）里跑，只可写 lane worktree、主仓库 `.git`（`hooks` / `config` 除外）、各包管理器缓存与 lane 私有临时目录，网络只放行公共包源与本机为 npm / pip / Go / Maven / Cargo 配置的源，沙箱起不来时一律拒绝；在沙箱里替不走代理的工具配好代理（Node `fetch`、JVM、Maven settings 与 `mvn` 包装）并固定 pnpm store，实测 pip、uv、npm、pnpm、bun、Go、Maven、Cargo 都能装依赖；`write` / `edit` 越界即拦，`--strict` 下改为问人且默认拒绝
   - goal 用固定版本的 `pi-codex-goal`（`-e npm:` 只为本次运行加载），项目信任用 `--approve`（只对本次运行生效）；不改用户的 pi 配置，lane 里关闭 MCP
   - 多条 pi lane 逐条启动、goal 逐条下达，彼此错开 4 秒；pi 抢配置锁失败时会带着 `unknown` 模型起来，`launch` 识别后自行重启一次
   - 发出的 prompt 会核对是否真的提交，只在输入框里正是刚发的文字时补一次回车；pi 的选择框等人时 herdr 仍报 `working`，巡检读 pane 改判为 `blocked`

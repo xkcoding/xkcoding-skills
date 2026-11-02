@@ -55,7 +55,7 @@ bash "${CLAUDE_SKILL_DIR}/scripts/doctor.sh" --executor pi
 
 **只碰自己的，只做可逆的。** 只操纵工作目录就是某条 lane worktree 的那个 agent；永不 `focus`（会抢用户的焦点），永不 `herdr server stop`。永不 commit 或 push base 分支；永不 force-push；永不 merge、archive、删 worktree、删分支——这些命令最后打印给用户，由人来跑。
 
-**边界靠机制，不靠模型自觉。** pi 自身没有沙箱，也不在调用工具前请求批准。lane 的边界是 lane-guard 扩展给的：shell 命令在 OS 沙箱里跑（可写的只有 lane worktree、主仓库 `.git`——`hooks` 与 `config` 除外——和包管理器缓存；网络只放行包源），`write` / `edit` 越界即被拦并把原因交给模型；沙箱起不来时 shell 一律拒绝，不会裸跑。pi 进程本身和其他扩展在沙箱之外——确认页如实这么说，不夸大。"lane 不 push"仍然靠 goal 里写明，加上发布前检查 origin 上是不是已经有了这条分支。
+**边界靠机制，不靠模型自觉。** pi 自身没有沙箱，也不在调用工具前请求批准。lane 的边界是 lane-guard 扩展给的：shell 命令在 OS 沙箱里跑（可写的只有 lane worktree、主仓库 `.git`——`hooks` 与 `config` 除外——、各包管理器的缓存和 lane 自己的临时目录；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源），`write` / `edit` 越界即被拦并把原因交给模型；沙箱起不来时 shell 一律拒绝，不会裸跑。pi 进程本身和其他扩展在沙箱之外——确认页如实这么说，不夸大。"lane 不 push"仍然靠 goal 里写明，加上发布前检查 origin 上是不是已经有了这条分支。
 
 **拿不准就交给人。** lane 在提问、有弹层在等人、goal 被人暂停或自判 blocked、同一个 worktree 里有两个 agent——把原话报给用户，不要替他回答。
 
@@ -174,6 +174,7 @@ lane 的策略文件留在 `~/.claude/dispatch/<repo-id>/<change>-policy.json`�
 - 启动后立刻发的 prompt 可能留在输入框里没提交；`prompt` 会核对后补一次回车，且只在输入框里正是刚发的那段文字时才补。
 - herdr 可能在 pi 画出界面之前就报就绪（扩展还在拉）；`launch` 会等界面出来再判断。
 - lane-guard 的策略只从 `--lane-policy` 读，lane 自己的文件改不了它；策略坏了或沙箱起不来时 shell 一律拒绝。
+- lane 里 pip（venv）、uv、npm、pnpm、bun、Go、Maven、Cargo 都能装依赖：lane-guard 在沙箱里替它们设好代理、临时目录与 pnpm store，`mvn` 是一个带 `-gs` 的 shell 函数。Gradle 与 yarn 没测过；装不上时 lane 会拿到 403 或 `Operation not permitted`，按上报处理。
 - 一条 pi lane 完成 2 个小 task 约 2 分钟、2 万 token（glm-5.3）。
 
 ## References 索引

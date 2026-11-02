@@ -273,8 +273,8 @@ def pane_tail(text, n=24):
     return "\n".join([ln.rstrip() for ln in text.splitlines() if ln.strip()][-n:])
 
 
-def first_line(cmd):
-    rc, out, _ = run(cmd)
+def first_line(cmd, cwd=None):
+    rc, out, _ = run(cmd, cwd=cwd, timeout=30)
     lines = out.strip().splitlines() if rc == 0 else []
     return lines[0] if lines else None
 
@@ -334,10 +334,14 @@ def codex_label():
 
 PI_GOAL_EXTENSION = "pi-codex-goal@0.6.1"  # pinned: bumping it means re-running the probes in known-behaviors
 PI_GUARD_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "lane-guard")
-PI_PUBLIC_REGISTRIES = ["npmjs.org", "*.npmjs.org", "registry.npmjs.org", "registry.yarnpkg.com", "pypi.org",
-                        "*.pypi.org", "files.pythonhosted.org", "github.com", "*.github.com", "api.github.com",
-                        "raw.githubusercontent.com"]
-PI_CACHE_DIRS = [".npm", ".cache"] + (["Library/Caches"] if sys.platform == "darwin" else [])
+PI_PUBLIC_REGISTRIES = [
+    "npmjs.org", "*.npmjs.org", "registry.npmjs.org", "registry.yarnpkg.com",   # npm / yarn
+    "pypi.org", "*.pypi.org", "files.pythonhosted.org",                          # pip / uv
+    "github.com", "*.github.com", "api.github.com", "raw.githubusercontent.com", # git deps, release assets
+    "proxy.golang.org", "sum.golang.org",                                        # Go
+    "repo.maven.apache.org", "repo1.maven.org",                                  # Maven Central
+    "crates.io", "index.crates.io", "static.crates.io",                          # Cargo
+]
 PI_RULE = re.compile(r"^\s*─{8,}\s*$")
 PI_WORKING_RULE = re.compile(r"^\s*─+\s+\S+\s+Working\b")
 PI_STATS = re.compile(r"\d+(?:\.\d+)?%/\d+(?:\.\d+)?[KMG]?\b")
@@ -421,16 +425,79 @@ def pi_startup_problem(text):
     return None
 
 
+def url_host(url):
+    m = re.match(r"^(?:[a-z+]+://)?(?:[^@/]+@)?([^/:\s\"]+)", (url or "").strip())
+    host = m.group(1).lower() if m else ""
+    return host if "." in host and host != "0.0.0.0" else None
+
+
+def maven_settings():
+    try:
+        with open(os.path.expanduser("~/.m2/settings.xml"), errors="replace") as fh:
+            return re.sub(r"<!--.*?-->", "", fh.read(), flags=re.S)
+    except OSError:
+        return ""
+
+
+def cargo_home():
+    return os.environ.get("CARGO_HOME") or os.path.expanduser("~/.cargo")
+
+
 def registry_hosts(cwd):
-    """Package registries the user configured (npm, pip), so a lane can install dependencies from them."""
+    """Registries and mirrors the user configured (npm, pip, Go, Maven, Cargo), so a lane installs from the
+    same places the user does. Read here, outside the sandbox; the lane cannot change them."""
     hosts = []
-    for cmd in (["npm", "config", "get", "registry"], ["pip3", "config", "get", "global.index-url"],
-                ["pip", "config", "get", "global.index-url"]):
-        rc, out, _ = run(cmd, cwd=cwd, timeout=20)
-        m = re.match(r"^[a-z+]+://(?:[^@/]+@)?([^/:]+)", out.strip()) if rc == 0 else None
-        if m:
-            hosts.append(m.group(1).lower())
-    return hosts
+    npm = url_host(first_line(["npm", "config", "get", "registry"], cwd))
+    if npm:
+        parts = npm.split(".")
+        # A mirror may serve tarballs from a sibling host (registry.npmmirror.com -> cdn.npmmirror.com).
+        hosts += [npm] + (["*." + ".".join(parts[-2:])] if len(parts) > 2 else [])
+    for cmd in (["pip3", "config", "get", "global.index-url"], ["pip", "config", "get", "global.index-url"]):
+        hosts.append(url_host(first_line(cmd, cwd)))
+    rc, out, _ = run(["go", "env", "GOPROXY", "GOSUMDB"], cwd=cwd, timeout=30)
+    if rc == 0:
+        lines = out.splitlines() + ["", ""]
+        hosts += [url_host(p) for p in re.split(r"[,|]", lines[0]) if p.strip() not in ("direct", "off", "")]
+        sumdb = lines[1].split()
+        hosts.append(url_host(sumdb[-1]) if sumdb and sumdb[0] != "off" else None)
+    hosts += [url_host(u) for u in re.findall(r"<url>\s*([^<\s]+)\s*</url>", maven_settings())]
+    for name in ("config.toml", "config"):
+        try:
+            with open(os.path.join(cargo_home(), name), errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        hosts += [url_host(u.replace("sparse+", "", 1)) for u in re.findall(r'(?:registry|index)\s*=\s*"([^"]+)"', text)]
+    return [h for h in hosts if h]
+
+
+def pnpm_store(cwd):
+    """The user's pnpm store, as pnpm reports it outside the sandbox (inside, pnpm would pick one in the worktree)."""
+    store = first_line(["pnpm", "store", "path"], cwd)
+    if store and os.sep + "store" in store:
+        return store[:store.rindex(os.sep + "store") + len(os.sep + "store")]
+    home = os.path.expanduser("~")
+    return store or (os.path.join(home, "Library", "pnpm", "store") if sys.platform == "darwin"
+                     else os.path.join(home, ".local", "share", "pnpm", "store"))
+
+
+def pi_cache_dirs(cwd):
+    """Package-manager caches a lane may write, so it can install dependencies (known-behaviors P18, P21).
+    Where the tool can say where its cache lives, ask it."""
+    home = os.path.expanduser("~")
+    dirs = [os.path.join(home, d) for d in (".npm", ".cache", os.path.join(".bun", "install", "cache"))]
+    if sys.platform == "darwin":
+        dirs.append(os.path.join(home, "Library", "Caches"))
+    dirs.append(pnpm_store(cwd))
+    gopath = (first_line(["go", "env", "GOPATH"], cwd) or os.path.join(home, "go")).split(os.pathsep)[0]
+    dirs.append(os.path.join(gopath, "pkg"))  # module cache and checksum database
+    m = re.search(r"<localRepository>\s*([^<\s]+)\s*</localRepository>", maven_settings())
+    local_repo = m.group(1) if m else os.path.join(home, ".m2", "repository")
+    local_repo = re.sub(r"\$\{env\.([A-Za-z_][A-Za-z0-9_]*)\}", lambda e: os.environ.get(e.group(1), ""),
+                        local_repo.replace("${user.home}", home))
+    dirs.append(os.path.expanduser(local_repo))
+    dirs += [os.path.join(cargo_home(), "registry"), os.path.join(cargo_home(), "git")]
+    return dirs
 
 
 def pi_policy(root, change, worktree, common_git_dir, strict):
@@ -443,17 +510,23 @@ def pi_policy(root, change, worktree, common_git_dir, strict):
     for d in PI_PUBLIC_REGISTRIES + registry_hosts(worktree):
         if d not in domains:
             domains.append(d)
+    lane_dir = os.path.dirname(bookkeeping_path(root))
+    # The lane's own TMPDIR lives outside the worktree, which must stay clean.
+    tmp_dir = os.path.join(lane_dir, change + "-tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    caches = pi_cache_dirs(worktree)
     policy = {
         "version": 1,
         "posture": "strict" if strict else "block",
-        # Package-manager caches are writable so a lane can install dependencies (known-behaviors P18).
-        "allowWrite": [real(worktree), common_git_dir] + [os.path.join(home, d) for d in PI_CACHE_DIRS],
+        "tmpDir": tmp_dir,
+        # Exported inside the sandbox before every command (known-behaviors P21).
+        "env": {"pnpm_config_store_dir": pnpm_store(worktree), "npm_config_store_dir": pnpm_store(worktree)},
+        "allowWrite": [real(worktree), common_git_dir, tmp_dir] + [d for i, d in enumerate(caches) if d not in caches[:i]],
         "denyWrite": [os.path.join(common_git_dir, "hooks"), os.path.join(common_git_dir, "config")],
         "denyRead": [os.path.join(home, d) for d in (".ssh", ".aws", ".gnupg")],
         "allowedDomains": domains,
     }
-    path = os.path.join(os.path.dirname(bookkeeping_path(root)), change + "-policy.json")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    path = os.path.join(lane_dir, change + "-policy.json")
     with open(path, "w") as fh:
         json.dump(policy, fh, indent=2)
     return path

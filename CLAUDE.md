@@ -80,7 +80,7 @@
 
 ### dispatch:pi（MVP）
 
-`/dispatch:pi`：与 `dispatch:codex` 同一套流程，执行者换成 pi（模型与凭据用 pi 自己的配置，可接 GLM 等第三方模型）。pi 自身没有沙箱，lane 的边界由随 skill 发布的 lane-guard 扩展给出：shell 在 sandbox-runtime 里（只可写 lane worktree、主仓库 `.git`——`hooks` / `config` 除外——和包管理器缓存；网络只放行包源；沙箱起不来就拒绝），`write` / `edit` 越界即拦（`--strict` 下问人，默认拒绝）。goal 用固定版本的 `pi-codex-goal`，启动时 `-e` 加载，不改用户的 pi 配置。多条 pi lane 逐条启动、彼此错开（pi 的配置锁会让同时启动的进程读不到模型）。仅 macOS / Linux。
+`/dispatch:pi`：与 `dispatch:codex` 同一套流程，执行者换成 pi（模型与凭据用 pi 自己的配置，可接 GLM 等第三方模型）。pi 自身没有沙箱，lane 的边界由随 skill 发布的 lane-guard 扩展给出：shell 在 sandbox-runtime 里（只可写 lane worktree、主仓库 `.git`——`hooks` / `config` 除外——、各包管理器缓存与 lane 私有临时目录；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源；不走代理的工具由 lane-guard 在沙箱里配好；沙箱起不来就拒绝），`write` / `edit` 越界即拦（`--strict` 下问人，默认拒绝）。goal 用固定版本的 `pi-codex-goal`，启动时 `-e` 加载，不改用户的 pi 配置。多条 pi lane 逐条启动、彼此错开（pi 的配置锁会让同时启动的进程读不到模型）。仅 macOS / Linux。
 
 **结构**（单个自包含 skill）：
 - `dispatch/pi/SKILL.md` — 与 codex 的 SKILL.md 同构，执行者相关处按 pi 写
