@@ -22,9 +22,9 @@
 
 ## 4. 真跑（一次性仓库 + herdr）
 
-- [ ] 4.1 一个 1 task 的 change：写一个起 `localhost` HTTP 服务并请求它的测试，测试过程中往 `/tmp` 写一个临时文件，按 `/dispatch:omp` 的流程 `create` → `launch` → `list` 直到 `claims_done`；验证：session 里没有 `Operation not permitted`，测试在 lane 里通过，每 task 一个 commit；`launch` 返回 `system_tmp: "open"`
-- [ ] 4.2 清理：`herdr worktree remove --force`、关闭实验仓库的 workspace、删实验目录、本机记录与对应 omp session；验证：`herdr workspace list` 只剩用户自己的 workspace，`/tmp` 无实验目录
+- [x] 4.1 一个 1 task 的 change：写一个起 `localhost` HTTP 服务并请求它的测试，测试过程中往 `/tmp` 写一个临时文件，按 `/dispatch:omp` 的流程 `create` → `launch` → `list` 直到 `claims_done`；验证：session 里没有 `Operation not permitted`，测试在 lane 里通过，每 task 一个 commit；`launch` 返回 `system_tmp: "open"`
+- [x] 4.2 清理：`herdr worktree remove --force`、关闭实验仓库的 workspace、删实验目录、本机记录与对应 omp session；验证：`herdr workspace list` 只剩用户自己的 workspace，`/tmp` 无实验目录
 
 ## 5. 文档
 
-- [ ] 5.1 `dispatch/omp/SKILL.md`、`references/setup.md` 的边界段写明 `/tmp` 可写（仓库在 `/tmp` 下时不放）与 `localhost` 端口可用及其代价；`references/known-behaviors.md` 记 S1–S3 与第 3、4 组的实测结果（带日期版本），Linux 行为列入未验证；同时删掉"没验证过的说法"里已在 dispatch-omp 4.3 验证过的那条（`--strict` 询问框与 omp 退出后的 pane）；`dispatch/README.md` 姿态表、`CHANGELOG.md` Unreleased 同步；验证：`python3 skill-craft/scripts/check.py dispatch/omp` 无 flags，`openspec validate --all --strict` 通过
+- [x] 5.1 `dispatch/omp/SKILL.md`、`references/setup.md` 的边界段写明 `/tmp` 可写（仓库在 `/tmp` 下时不放）与 `localhost` 端口可用及其代价；`references/known-behaviors.md` 记 S1–S3 与第 3、4 组的实测结果（带日期版本），Linux 行为列入未验证；同时删掉"没验证过的说法"里已在 dispatch-omp 4.3 验证过的那条（`--strict` 询问框与 omp 退出后的 pane）；`dispatch/README.md` 姿态表、`CHANGELOG.md` Unreleased 同步；验证：`python3 skill-craft/scripts/check.py dispatch/omp` 无 flags，`openspec validate --all --strict` 通过
