@@ -53,6 +53,12 @@
 - (2026-11-02, lane-guard 确定性测试) 用模拟扩展接口的测试验过 40 种读写目标：上面这些绕过（多文件 / 移动 / 改名 / 带 path 又带其他头部 / 缩进头部的 edit、悬空软链与目录软链、大小写不同的 `.GIT` 与禁读目录、单斜杠与大写 scheme、`urn:`、含禁读文件或网址的列表、`local:`、`skill://`）全部被拦；worktree 内的普通读写、单文件 edit、apply_patch 内的增改、`README.md:1-20`、`Makefile:12`、`a.ts:1-5,10-12`、worktree 内的路径列表放行。
 - (2026-11-02, glm-5.3) 让模型读工作区外一个名为 secret 的文件，模型自己拒绝了——那是模型的判断，不是边界。
 
+- (2026-11-02, pi 1.5.0 + lane-guard, 真实 lane) aimicontextstudio 的 `agent-eval-runner-dedicated-models` 整个 session 里 19 次 `Operation not permitted` 只出自两处：模型手写 `/tmp/DebugFreezeTest.java`（`$TMPDIR` 早已指向 lane 自己的目录），测试起本地 mock server（`JevDecisionClientTest`、python `bind failed`）；没有网络被拒。所以策略放行 `/tmp` 并打开 `allowLocalBinding`。
+- (2026-11-04, sandbox-runtime 0.0.26, macOS) `allowLocalBinding` 生成的 Seatbelt 规则写的是 `localhost:*`，实际覆盖本机所有地址：开启后绑 `127.0.0.1`、`0.0.0.0`、局域网 IP 都成功，沙箱里绑 `0.0.0.0` 的服务从局域网 IP 可连入；出站只到本机地址（本机局域网 IP 可达，网关不可达），连别的主机仍只走代理白名单。不开时任何 bind 都 `Operation not permitted`。0.0.26 没有更细的开关。
+- (2026-11-04, sandbox-runtime 0.0.26, macOS) 有写限制时 sandbox-runtime 自动放行 `$TMPDIR` 的上级目录（`/var/folders/XX/YYY`），与策略无关：建在那里的仓库，主 checkout 与 `.git` 对 lane 整体可写。
+- (2026-11-04, sandbox-runtime 0.0.26, macOS) 由 `guard_policy` 生成的策略（仓库在家目录下）：lane 里起 `127.0.0.1` 的 HTTP 服务并请求得 200，写 `/tmp` 成功，未放行域名连不上，commit、建删分支、stash 正常；写主仓库 `commondir`、其他 lane 的 `gitdir`、hooks、config、主 checkout 仍 `Operation not permitted`，读 `~/.ssh` 仍被拒。仓库在 `/tmp` 下时策略不含 `/tmp`，写 `/tmp` 与主 checkout 失败、lane 内 commit 成功。
+- (2026-11-04, omp 18.15.0 + glm-5.3, 真实 lane) 一个 1 task 的 change：测试在 `127.0.0.1:0` 起 `http.server` 并请求、往 `/tmp` 写临时文件；lane 跑到 `claims_done`，测试在沙箱 shell 里 `OK`，session 里没有一次 `Operation not permitted`；`launch` 返回 `system_tmp: "open"`。
+
 ## openspec
 
 - (2026-11-02, openspec 1.12.0) `openspec init --tools oh-my-pi` 写 `.omp/skills/openspec-*` 与 `.omp/commands/opsx-*.md`，不碰 home 目录。
@@ -61,8 +67,7 @@
 
 遇到时小心处理，验证之后挪到上面。
 
-- omp 的选择框 / 确认框（`--strict` 下 lane-guard 询问）在 omp 里长什么样、herdr 那时报什么状态；omp 退出后的 pane。
 - goal 的 `paused` / `budget-limited` / `dropped` 在真实 lane 里出现时的样子。
-- Linux（bubblewrap）上的 lane-guard：以上沙箱事实都只在 macOS 上测过。
+- Linux（bubblewrap）上的 lane-guard：以上沙箱事实都只在 macOS 上测过。Linux 上 sandbox-runtime 用 `bwrap --unshare-net`，`allowLocalBinding` 不起作用：命名空间里的 loopback 应当可用，但宿主机上的服务够不着（读源码所得）。
 - Gradle、yarn 没测过；Maven 3.9+ 的 `./mvnw` 经 `MAVEN_ARGS` 带 `-gs` 的路径没测过。
 - 长任务下 context 占满、compaction、provider 限流时 omp lane 的表现。

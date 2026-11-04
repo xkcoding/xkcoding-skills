@@ -54,7 +54,7 @@ The lane mechanics shipped in the `codex` and `omp` skill directories SHALL be i
 - **THEN** each lane SHALL run its own executor and neither dispatch SHALL alter the other lane
 
 ### Requirement: An omp lane's shell runs inside an operating-system sandbox
-Every shell command an omp lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree, the parts of the repository's common git directory a commit writes (objects, loose and packed refs, reflogs and LFS objects) plus the lane's own administrative directory, the user's package-manager caches, and a temporary directory private to the lane. Nothing that tells git where a repository or its configuration is — the worktree's `.git` pointer, the lane's administrative `commondir`, `gitdir` and `config.worktree`, the common directory's `config`, `commondir`, `config.worktree` and hooks, and other worktrees' administrative files — SHALL be writable, and the dispatcher's own git commands SHALL NOT run a repository-configured file-system monitor. The sandbox SHALL deny reading the user's SSH, cloud, GnuPG, container, Kubernetes, `netrc`, GitHub and GitLab CLI, codex and omp credential locations. Outbound network access from the sandbox SHALL be limited to an allowlist of package-registry hosts: the public registries and the registries and mirrors the user configured for npm, pip, Go, Maven and Cargo. Package managers that do not use the sandbox's proxy on their own SHALL be configured inside the sandbox to use it. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
+Every shell command an omp lane runs — through its shell tool or a user-entered shell command — SHALL execute inside an operating-system sandbox whose writable locations are only the lane's worktree, the parts of the repository's common git directory a commit writes (objects, loose and packed refs, reflogs and LFS objects) plus the lane's own administrative directory, the user's package-manager caches, a temporary directory private to the lane, and the system temporary directory `/tmp` (by its real path) unless the repository's main checkout, the lane's worktree or the common git directory lies under it, in which case `/tmp` SHALL stay closed and the launch SHALL report it. Nothing that tells git where a repository or its configuration is — the worktree's `.git` pointer, the lane's administrative `commondir`, `gitdir` and `config.worktree`, the common directory's `config`, `commondir`, `config.worktree` and hooks, and other worktrees' administrative files — SHALL be writable, and the dispatcher's own git commands SHALL NOT run a repository-configured file-system monitor. The sandbox SHALL deny reading the user's SSH, cloud, GnuPG, container, Kubernetes, `netrc`, GitHub and GitLab CLI, codex and omp credential locations. Shell commands SHALL be allowed to listen on and connect to ports on this machine's own addresses. Connections to any other host SHALL be limited to an allowlist of package-registry hosts: the public registries and the registries and mirrors the user configured for npm, pip, Go, Maven and Cargo. Package managers that do not use the sandbox's proxy on their own SHALL be configured inside the sandbox to use it. When the sandbox cannot be initialized, shell commands SHALL be refused rather than run unsandboxed.
 
 #### Scenario: Commit from the lane
 - **WHEN** an omp lane runs `git commit` in its worktree
@@ -63,6 +63,22 @@ Every shell command an omp lane runs — through its shell tool or a user-entere
 #### Scenario: Installing dependencies
 - **WHEN** an omp lane installs a dependency with npm, pnpm, bun, pip, uv, Go, Maven or Cargo from a registry on the allowlist
 - **THEN** the install SHALL succeed, writing only to the worktree, the package-manager caches and the lane's temporary directory, and leaving the worktree's other files untouched
+
+#### Scenario: Test with a local server
+- **WHEN** a test in an omp lane starts a server on a `localhost` port and connects to it
+- **THEN** the server SHALL start and the connection SHALL succeed
+
+#### Scenario: Another host on the local network
+- **WHEN** an omp lane's shell command connects directly to another host on the local network, such as the gateway
+- **THEN** the connection SHALL be refused
+
+#### Scenario: Scratch file in /tmp
+- **WHEN** an omp lane writes `/tmp/DebugFreezeTest.java` through its shell or its write tool, in a repository that does not live under `/tmp`
+- **THEN** the write SHALL succeed
+
+#### Scenario: Repository under /tmp
+- **WHEN** an omp lane is launched for a repository whose main checkout lies under `/tmp`
+- **THEN** `/tmp` SHALL NOT be added to the writable locations, a shell write to the main checkout SHALL still fail, and the launch result SHALL say that `/tmp` stayed closed
 
 #### Scenario: Write outside the lane through the shell
 - **WHEN** an omp lane's shell command writes to the main checkout, the home directory, the common git directory's hooks, config or `commondir`, or another worktree's administrative files

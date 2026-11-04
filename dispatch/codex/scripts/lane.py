@@ -445,6 +445,17 @@ GUARD_DENY_READ = (".ssh", ".aws", ".gnupg", ".netrc", ".docker", ".kube", ".azu
                    ".config/gh", ".config/glab-cli", ".codex", ".omp/agent", ".pi/agent")
 
 
+def system_tmp(root, worktree, common_git_dir):
+    """(real /tmp, None) when a lane may write the system temp directory, else (None, why not). Opening /tmp
+    would also open a repository that lives under it, its .git included: the sandbox's denies cannot carve the
+    lane's own worktree back out (design D2)."""
+    tmp = real("/tmp")
+    for label, path in (("main checkout", root), ("lane worktree", worktree), ("common git directory", common_git_dir)):
+        if path and (real(path) == tmp or real(path).startswith(tmp + os.sep)):
+            return None, "the {} {} is under {}".format(label, real(path), tmp)
+    return tmp, None
+
+
 def guard_policy(root, change, worktree, common_git_dir, strict):
     """Write the lane's sandbox policy outside the repository and return its path."""
     if not os.path.isdir(os.path.join(GUARD_DIR, "node_modules", "@anthropic-ai", "sandbox-runtime")):
@@ -461,6 +472,7 @@ def guard_policy(root, change, worktree, common_git_dir, strict):
     os.makedirs(tmp_dir, exist_ok=True)
     store = pnpm_store(worktree)
     caches = guard_cache_dirs(worktree, store)
+    shared_tmp = system_tmp(root, worktree, common_git_dir)[0]
     admin = real(git_out(["rev-parse", "--path-format=absolute", "--git-dir"], worktree))
     if not admin or real(admin) == real(common_git_dir):
         fail("cannot find this lane's worktree admin directory", worktree=worktree)
@@ -475,7 +487,7 @@ def guard_policy(root, change, worktree, common_git_dir, strict):
         # what a commit writes is writable (objects, refs, packed refs, reflogs, LFS objects) plus this lane's own admin
         # directory minus the files that point git elsewhere; the main checkout's and other lanes' admin files
         # stay out of reach.
-        "allowWrite": [real(worktree), tmp_dir]
+        "allowWrite": [real(worktree), tmp_dir] + ([shared_tmp] if shared_tmp else [])
                       + [os.path.join(common_git_dir, d) for d in
                          ("objects", "refs", "logs", "lfs", "reftable", "packed-refs", "packed-refs.lock")] + [admin]
                       + [d for i, d in enumerate(caches) if d not in caches[:i]],
@@ -484,6 +496,8 @@ def guard_policy(root, change, worktree, common_git_dir, strict):
         # Credentials the lane has no use for. ~/.npmrc stays readable: npm reads its registry from it.
         "denyRead": [os.path.join(home, d) for d in GUARD_DENY_READ],
         "allowedDomains": domains,
+        # Tests may serve and call localhost ports; other interfaces stay closed (design D1).
+        "allowLocalBinding": True,
     }
     path = os.path.join(lane_dir, change + "-policy.json")
     with open(path, "w") as fh:
@@ -1047,6 +1061,7 @@ def cmd_launch(args):
     common = real(git_out(["rev-parse", "--path-format=absolute", "--git-common-dir"], root))
     posture = "strict" if args.strict else ex["default_posture"]
     policy_file = ex["policy"](root, args.change, lane["worktree"], common, args.strict) if ex["policy"] else None
+    tmp_reason = system_tmp(root, lane["worktree"], common)[1] if ex["policy"] else None
     # An executor that takes its goal at start-up gets it on the first launch only; a relaunched lane that
     # already has its goal (or its commits) is continued with a prompt instead.
     # omp loads extensions, settings, MCP servers and hooks from the project's .omp/ and .claude/ in its own,
@@ -1118,6 +1133,8 @@ def cmd_launch(args):
           "workspace_id": ws, "posture": posture, "start_result": err or "started", "state": state,
           "startup_problem": problem, "retried": retried, "waited_s": waited, "policy_file": policy_file,
           "model": model, "goal_sent": bool(up and goal_text), "start_retried": start_retried,
+          "system_tmp": None if not ex["policy"] else ("closed" if tmp_reason else "open"),
+          "system_tmp_reason": tmp_reason,
           "pane_tail": pane_tail(text)}, 0 if up else 1)
 
 

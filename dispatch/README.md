@@ -75,12 +75,14 @@ omp 自身没有 OS 沙箱；omp lane 的边界由随 skill 发布的 lane-guard
 
 | 姿态 | 越出 lane 的文件写入 | shell 命令 |
 |---|---|---|
-| 默认 | 拦下，原因交给模型，lane 不停；`read` 读不到各类凭据目录（`~/.npmrc` 除外），只读普通路径，读不了网址与 omp 的内部 URI；多文件、移动、改名的 edit 与经软链、换大小写的路径都按真实目标检查 | 一律在 OS 沙箱里（macOS Seatbelt / Linux bubblewrap）：只可写 lane worktree、主仓库 `.git` 里 commit 要写的部分（objects、refs、reflog、LFS）与本 lane 的管理目录、各包管理器缓存（npm、pnpm store、bun、pip / uv、`$GOPATH/pkg`、Maven 本地仓库、`~/.cargo/registry` 与 `git`）和 lane 私有的临时目录；网络只放行公共包源与本机为 npm / pip / Go / Maven / Cargo 配置的源；不走代理的工具由 lane-guard 在沙箱里配好（Node 的 `fetch`、JVM、Maven 的 settings）；沙箱起不来时一律拒绝，不会裸跑 |
+| 默认 | 拦下，原因交给模型，lane 不停；`read` 读不到各类凭据目录（`~/.npmrc` 除外），只读普通路径，读不了网址与 omp 的内部 URI；多文件、移动、改名的 edit 与经软链、换大小写的路径都按真实目标检查 | 一律在 OS 沙箱里（macOS Seatbelt / Linux bubblewrap）：只可写 lane worktree、主仓库 `.git` 里 commit 要写的部分（objects、refs、reflog、LFS）与本 lane 的管理目录、各包管理器缓存（npm、pnpm store、bun、pip / uv、`$GOPATH/pkg`、Maven 本地仓库、`~/.cargo/registry` 与 `git`）、lane 私有的临时目录和 `/tmp`（仓库本身在 `/tmp` 下时不放）；可在本机端口上监听与互连（测试起本地服务）；连别的主机只放行公共包源与本机为 npm / pip / Go / Maven / Cargo 配置的源；不走代理的工具由 lane-guard 在沙箱里配好（Node 的 `fetch`、JVM、Maven 的 settings）；沙箱起不来时一律拒绝，不会裸跑 |
 | `--strict` | 弹给你批准，默认选项是拒绝；Claude 只转达，不代答 | 同上 |
 
 lane 里只开 read、bash、edit、write、goal 五个工具（外加 `--no-pty --no-lsp`）：omp 其余的工具（eval、glob、task 子代理、web_search 等）会绕过沙箱或守卫。`xd://` 设备与 MCP 工具要经 `write` 调用，守卫拒绝任何 `协议://` 写入，所以也调用不到。启动参数里的 `--approval-mode yolo` 只关掉 omp 自己"调用工具前问人"的环节，不放开上面任何一样。goal 随启动参数下达，你的 omp 配置不会被改动；omp 没有配置锁，多条 lane 同时启动没问题。
 
 omp 进程本身在沙箱之外，它启动时拉起的 MCP server、加载的项目扩展也是——包括被派发仓库自带的 `.omp/mcp.json`、`.omp/extensions/`。派发不信任的仓库前先看一眼 `.omp/` 与 `.claude/`；lane 自己改了这些项目配置（还有 `mcp.json`、`.vscode/` 等）时，`launch` 拒绝再启动它，等你审过。
+
+放开本机端口与 `/tmp` 的代价：lane 能连你本机上开着的服务（本地数据库、模型服务），它绑在 `0.0.0.0` 上的测试服务运行期间局域网可达（开着 macOS 防火墙时会拦），也能改删别的程序放在 `/tmp` 里的文件。不要把要派发的仓库放在 `/tmp` 或 `$TMPDIR` 下。
 
 **沙箱关不掉。** 默认姿态已经不需要人盯着批准，没有理由再把沙箱或守卫也关掉。
 

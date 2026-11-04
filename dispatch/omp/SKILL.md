@@ -56,11 +56,11 @@ bash "${CLAUDE_SKILL_DIR}/scripts/doctor.sh" --executor omp
 **只碰自己的，只做可逆的。** 只操纵工作目录就是某条 lane worktree 的那个 agent；永不 `focus`（会抢用户的焦点），永不 `herdr server stop`。永不 commit 或 push base 分支；永不 force-push；永不 merge、archive、删 worktree、删分支——这些命令最后打印给用户，由人来跑。
 
 **边界靠机制，不靠模型自觉。** omp 自身没有 OS 沙箱。lane 的边界由三样东西给出：
-- **OS 沙箱**（随 skill 发布的 lane-guard 扩展）：shell 命令里可写的只有 lane worktree、主仓库 `.git` 里 commit 要写的部分（objects、refs、reflog、LFS 对象）和这条 lane 自己的管理目录、各包管理器的缓存和 lane 自己的临时目录；凡是告诉 git 仓库与配置在哪的文件（`.git` 指针、`commondir`、`gitdir`、`config`、`config.worktree`、hooks、其他 worktree 的管理文件）都写不了；读不到 SSH / 云 / GnuPG / docker / kube / netrc / gh / glab / codex / omp 的凭据；网络只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源；沙箱起不来时 shell 一律拒绝，不会裸跑。
+- **OS 沙箱**（随 skill 发布的 lane-guard 扩展）：shell 命令里可写的只有 lane worktree、主仓库 `.git` 里 commit 要写的部分（objects、refs、reflog、LFS 对象）和这条 lane 自己的管理目录、各包管理器的缓存、lane 自己的临时目录和 `/tmp`（仓库本身在 `/tmp` 下时不放）；凡是告诉 git 仓库与配置在哪的文件（`.git` 指针、`commondir`、`gitdir`、`config`、`config.worktree`、hooks、其他 worktree 的管理文件）都写不了；读不到 SSH / 云 / GnuPG / docker / kube / netrc / gh / glab / codex / omp 的凭据；可以在本机端口上监听与互连（测试起本地服务），连别的主机只放行公共包源与用户为 npm / pip / Go / Maven / Cargo 配置的源；沙箱起不来时 shell 一律拒绝，不会裸跑。
 - **守卫**：`write` / `edit` 越界即被拦并把原因交给模型——一次改多个文件、移动或改名时逐个检查，路径里的软链（包括指向还不存在的文件的）都先解析；`read` 读不到上面那些凭据目录，只能读普通路径：网址、omp 的内部 URI（含 `skill://`）一律拦，`a;b` 这类列表逐个检查——omp 的 `read` 本来能在沙箱外联网，也会把列表拆开读；`README.md:1-20` 这种行号选择照常可用。路径比较前按磁盘上的真实拼写解析，`.GIT` 与 `.git` 同等对待。goal 里直接写明 apply skill 的路径。
 - **工具白名单**：lane 里只有 read、bash、edit、write、goal。omp 其余的工具（eval、glob、task 子代理、web_search、交互式 PTY、LSP）都会绕过沙箱或守卫，所以不开。`xd://` 设备（含 MCP 工具）要经 `write` 调用，守卫拒绝任何 `协议://` 写入，所以也调用不到。
 
-启动参数里的 `--approval-mode yolo` 只是关掉 omp 自己"调用工具前问人"的环节——否则用户若把 omp 的默认审批改成会问，无人值守的 lane 会卡在每条 bash 上。它不放开上面任何一样；`--strict` 的问人由守卫发起。omp 进程本身在沙箱之外，它在启动时拉起的 MCP server 与加载的项目扩展也是——包括被派发仓库自带的 `.omp/mcp.json`、`.omp/extensions/`；确认页如实这么说。lane 自己改了这些项目配置时，`launch` 拒绝再启动它，直到用户审过（`--reviewed-config`）。lane 能写共享的包缓存，这意味着它能在缓存里放进你之后在沙箱外构建时会执行的代码——派发的是你愿意让它碰你依赖缓存的 change。"lane 不 push"仍然靠 goal 里写明，加上发布前检查 origin 上是不是已经有了这条分支。
+启动参数里的 `--approval-mode yolo` 只是关掉 omp 自己"调用工具前问人"的环节——否则用户若把 omp 的默认审批改成会问，无人值守的 lane 会卡在每条 bash 上。它不放开上面任何一样；`--strict` 的问人由守卫发起。omp 进程本身在沙箱之外，它在启动时拉起的 MCP server 与加载的项目扩展也是——包括被派发仓库自带的 `.omp/mcp.json`、`.omp/extensions/`；确认页如实这么说。lane 自己改了这些项目配置时，`launch` 拒绝再启动它，直到用户审过（`--reviewed-config`）。lane 能连本机上开着的服务（本地数据库、模型服务）；它绑在 `0.0.0.0` 上的测试服务运行期间局域网可达（macOS 防火墙开着时会拦）。lane 能写共享的包缓存，这意味着它能在缓存里放进你之后在沙箱外构建时会执行的代码——派发的是你愿意让它碰你依赖缓存的 change。"lane 不 push"仍然靠 goal 里写明，加上发布前检查 origin 上是不是已经有了这条分支。
 
 **拿不准就交给人。** lane 在提问、有弹层在等人、goal 被人暂停或放弃、同一个 worktree 里有两个 agent——把原话报给用户，不要替他回答。
 
@@ -76,7 +76,7 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/lane.py" <子命令> …
 |---|---|
 | `plan [<change> …] --executor omp [--no-pr]` | 只读。哪些 change 可派发、不可派发的原因（已有 lane 时附 `lane_executor`）、推导出的分支 / worktree / agent 名、base、发布能做到哪一步 |
 | `create <change> --executor omp` | 建 worktree 与 `change/<change>` 分支；change 还没提交时，把它搬进 worktree 成为该分支的首个 commit。base 分支不会被动 |
-| `launch <change> --executor omp [--strict] [--reviewed-config]` | 写好 lane 的策略文件，在 lane 的 pane 里启动 omp（工具白名单、lane-guard），**goal 随启动参数一起下达**（`goal_sent: true`）；已经下达过 goal 的 lane 重启时不再带 goal。返回 `state`、`model`、`pane_tail` |
+| `launch <change> --executor omp [--strict] [--reviewed-config]` | 写好 lane 的策略文件，在 lane 的 pane 里启动 omp（工具白名单、lane-guard），**goal 随启动参数一起下达**（`goal_sent: true`）；已经下达过 goal 的 lane 重启时不再带 goal。返回 `state`、`model`、`system_tmp`（`/tmp` 是否放行，`closed` 时附原因）、`pane_tail` |
 | `prompt <change> --continue \| --resume \| --correct "<text>"` | 发一条后续 prompt。发之前确认身份、确认 lane 空闲、确认没有弹层；发之后确认文字真的提交了（`submitted`）。omp lane 的 `--goal` / `--plain` 一律拒绝——goal 已在 launch 时下达 |
 | `list [--table]` | 所有 lane（含 codex 的）的总览与 `verdict`。`--table` 每条 lane 一行，给人看 |
 | `record-verify <change>` | 从 stdin 的 JSON 写 `verify.md`（含执行者版本与模型）并提交到 lane 分支 |

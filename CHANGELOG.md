@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 审查后加固（omp 与守卫）：`edit` 自己扫补丁文本，按它点名的每个文件检查（多文件补丁、缩进的头部、`MV`、`*** Move to:`、`rename`），认不出目标就拒绝；路径逐段解析软链并取磁盘上的拼写，经悬空软链或换大小写写到 lane 外会被拦；lane 改了 omp 启动时加载的项目配置（`.omp/`、`.claude/`、`mcp.json` 等，被 gitignore 的也算）后 `launch` 拒绝再启动，人审过后带 `--reviewed-config`；默认模型改读 `omp config get --json`，不受 `FORCE_COLOR` 影响
   - 审查后加固（沙箱，对 codex 无影响）：公共 `.git` 只放行 `objects`、`refs`、`packed-refs`、`reftable`、`logs`、`lfs` 与本 lane 的管理目录——此前主仓库的 `commondir` 与其他 lane 的管理文件可写，能让沙箱外的 git 执行任意配置；禁读名单加上 docker、kube、netrc、gh、glab、gcloud、azure、codex、omp 的凭据位置
   - `launch` 的重试只针对启动命令没送达：agent 起来过再退出（留下 resume 提示）不重试；重新启动时 pane 上残留的上一帧不再被当成新 agent 已退出
+  - omp lane 的沙箱放开本机端口（`allowLocalBinding`，测试起本地服务）与 `/tmp`（仓库本身在 `/tmp` 下时不放，`launch` 报 `system_tmp`）；代价：lane 能连本机上开着的服务，绑 `0.0.0.0` 的测试服务运行期间局域网可达，能改删 `/tmp` 里别的程序的文件
   - `doctor.sh --executor omp`：omp 版本、默认模型及其是否可用、herdr 的 omp 集成、仓库是否提交了 apply skill（`.omp` / `.agents` / `.claude` 任一处）
 
 - **dispatch:pi**（新 Skill，`dispatch` 插件）：`/dispatch:pi` 把已 propose 的 OpenSpec change 派发给 pi，流程与 `/dispatch:codex` 相同（派发 → 巡检 → 亲手验收 → `verify.md` → push → draft 评审请求）

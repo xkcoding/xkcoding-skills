@@ -30,6 +30,8 @@ interface LanePolicy {
 	denyWrite: string[];
 	denyRead: string[];
 	allowedDomains: string[];
+	/** Shell commands may listen on and connect to localhost ports (tests that start a local server). */
+	allowLocalBinding?: boolean;
 }
 
 // The real location a path refers to: every symlink component is followed, including a final link whose
@@ -131,6 +133,9 @@ function loadPolicy(file: string): LanePolicy {
 	}
 	if (p.posture !== "block" && p.posture !== "strict") throw new Error(`unknown posture ${p.posture}`);
 	if (p.tmpDir !== undefined && typeof p.tmpDir !== "string") throw new Error("tmpDir must be a path");
+	if (p.allowLocalBinding !== undefined && typeof p.allowLocalBinding !== "boolean") {
+		throw new Error("allowLocalBinding must be true or false");
+	}
 	for (const [k, v] of Object.entries(p.env ?? {})) {
 		if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) || typeof v !== "string") throw new Error(`bad env entry ${k}`);
 	}
@@ -325,7 +330,11 @@ export default function (pi: ExtensionAPI) {
 		}
 		try {
 			await SandboxManager.initialize({
-				network: { allowedDomains: policy.allowedDomains, deniedDomains: [] },
+				network: {
+					allowedDomains: policy.allowedDomains,
+					deniedDomains: [],
+					allowLocalBinding: policy.allowLocalBinding === true,
+				},
 				filesystem: { denyRead: policy.denyRead, allowWrite: policy.allowWrite, denyWrite: policy.denyWrite },
 			});
 		} catch (err) {
