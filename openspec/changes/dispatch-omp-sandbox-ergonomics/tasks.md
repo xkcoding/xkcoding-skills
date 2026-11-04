@@ -8,17 +8,17 @@
 
 ## 1. 引擎（spec `dispatch-executors`；design D1、D2、D3）
 
-- [ ] 1.1 `lane.py` 新增判断 `/tmp` 能否放行的小函数（主 checkout、worktree、公共 git 目录任一在 `real("/tmp")` 下即不放，返回原因）；`guard_policy` 据此把 `real("/tmp")` 加进 `allowWrite`，并写 `allowLocalBinding: true`；`launch` 输出 `system_tmp`（`open` / `closed`）与 `system_tmp_reason`；验证：对仓库在 `/tmp` 外与在 `/tmp` 下的两个构造 lane 调 `guard_policy`，前者 `allowWrite` 含 `/private/tmp`（macOS）、后者不含且原因指向主 checkout；两者 `denyWrite` / `denyRead` / `allowedDomains` 与改动前逐项相同；`dispatch/sync-engine.sh --check` 通过
-- [ ] 1.2 codex 不受影响；验证：`EXECUTORS["codex"]["policy"]` 仍为 `None`，codex 的启动参数与 goal 文本与改动前逐字节相同
+- [x] 1.1 `lane.py` 新增判断 `/tmp` 能否放行的小函数（主 checkout、worktree、公共 git 目录任一在 `real("/tmp")` 下即不放，返回原因）；`guard_policy` 据此把 `real("/tmp")` 加进 `allowWrite`，并写 `allowLocalBinding: true`；`launch` 输出 `system_tmp`（`open` / `closed`）与 `system_tmp_reason`；验证：对仓库在 `/tmp` 外与在 `/tmp` 下的两个构造 lane 调 `guard_policy`，前者 `allowWrite` 含 `/private/tmp`（macOS）、后者不含且原因指向主 checkout；两者 `denyWrite` / `denyRead` / `allowedDomains` 与改动前逐项相同；`dispatch/sync-engine.sh --check` 通过
+- [x] 1.2 codex 不受影响；验证：`EXECUTORS["codex"]["policy"]` 仍为 `None`，codex 的启动参数与 goal 文本与改动前逐字节相同
 
 ## 2. lane-guard（design D1）
 
-- [ ] 2.1 `loadPolicy` 接受可选布尔 `allowLocalBinding`（其他类型报错，缺省为 `false`），`session_start` 把它放进 `SandboxManager.initialize` 的 `network`；验证：桩接口的确定性测试里，带 `true` / 缺省 / 非布尔三种策略分别得到 `allowLocalBinding: true` / `false` / 拒绝并 fail closed；上一轮的 40 个守卫用例与 `/tmp/x` 的 `write` 放行用例全部通过
+- [x] 2.1 `loadPolicy` 接受可选布尔 `allowLocalBinding`（其他类型报错，缺省为 `false`），`session_start` 把它放进 `SandboxManager.initialize` 的 `network`；验证：桩接口的确定性测试里，带 `true` / 缺省 / 非布尔三种策略分别得到 `allowLocalBinding: true` / `false` / 拒绝并 fail closed；上一轮的 40 个守卫用例与 `/tmp/x` 的 `write` 放行用例全部通过
 
 ## 3. 沙箱实测（sandbox-runtime CLI + 由 `guard_policy` 生成的真实策略，真实 git worktree，macOS）
 
-- [ ] 3.1 验证：本地服务测试——`python3 -m http.server` 绑 `127.0.0.1` 后 `curl localhost:<port>` 成功；绑 `0.0.0.0` 失败；`echo x > /tmp/<name>` 成功；未放行域名仍 `403`；commit、建删分支、stash 仍成功；写主仓库 `commondir`、其他 lane 的管理文件、hooks、config 仍 `Operation not permitted`；读 `~/.ssh` 仍被拒
-- [ ] 3.2 验证：仓库放在 `/tmp` 下时，策略不含 `/tmp`，`echo x > /tmp/<name>` 失败、写主 checkout 失败、lane worktree 内 commit 成功
+- [x] 3.1 验证：本地服务测试——`python3 -m http.server` 绑 `127.0.0.1` 后 `curl localhost:<port>` 成功；连局域网里的其他主机（网关）失败（绑 `0.0.0.0` 在 macOS 上会成功，见 design S2）；`echo x > /tmp/<name>` 成功；未放行域名仍 `403`；commit、建删分支、stash 仍成功；写主仓库 `commondir`、其他 lane 的管理文件、hooks、config 仍 `Operation not permitted`；读 `~/.ssh` 仍被拒
+- [x] 3.2 验证：仓库放在 `/tmp` 下时，策略不含 `/tmp`，`echo x > /tmp/<name>` 失败、写主 checkout 失败、lane worktree 内 commit 成功
 
 ## 4. 真跑（一次性仓库 + herdr）
 

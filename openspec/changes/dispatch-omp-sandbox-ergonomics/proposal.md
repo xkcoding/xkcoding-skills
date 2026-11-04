@@ -9,11 +9,12 @@ That session contained no network refusals; these two were the only friction.
 
 ## What Changes
 
-- Shell commands in an omp lane may listen on and connect to `localhost` ports. sandbox-runtime's `allowLocalBinding` covers loopback only; listening on any other interface stays refused, and outbound traffic beyond loopback still goes through the package-registry allowlist.
+- Shell commands in an omp lane may listen on and connect to ports on this machine (sandbox-runtime's `allowLocalBinding`). On macOS this covers all of the machine's own addresses, not just loopback. Connections to any other host still go through the package-registry allowlist.
 - `/tmp` (its real path, `/private/tmp` on macOS) becomes writable for the lane: for its shell commands through the sandbox, and for its write and edit tools through the guard, since they share the writable locations.
 - `/tmp` is not opened when the repository's main checkout, the lane's worktree, or the common git directory lies under it. Opening it there would make the main checkout and the git files that must stay protected writable as well. The lane then keeps only its private temporary directory, and `launch` reports that `/tmp` was left closed.
 - Docs say what this costs:
-  - the lane can reach services that listen on `localhost` on this machine (local databases, model servers);
+  - the lane can reach services that listen on this machine (local databases, model servers);
+  - a test server the lane binds to `0.0.0.0` is reachable from the local network while it runs, unless the macOS firewall blocks it;
   - it can change other programs' files in `/tmp`.
 
 ## Capabilities
@@ -24,7 +25,7 @@ That session contained no network refusals; these two were the only friction.
 
 ### Modified Capabilities
 
-- `dispatch-executors`: the requirement "An omp lane's shell runs inside an operating-system sandbox" adds `/tmp` (except when the repository lives under it) to the writable locations, and allows listening and connecting on `localhost`.
+- `dispatch-executors`: the requirement "An omp lane's shell runs inside an operating-system sandbox" adds `/tmp` (except when the repository lives under it) to the writable locations, and allows listening on and connecting to this machine's own addresses.
 
 ## Impact
 

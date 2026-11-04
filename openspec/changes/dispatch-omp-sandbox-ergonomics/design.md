@@ -11,7 +11,8 @@
 | # | 事实 |
 |---|---|
 | S1 | 真实 lane（aimicontextstudio `agent-eval-runner-dedicated-models`，pi 1.5.0 + 同一个 lane-guard，2026-11-02）session 里全部 19 次 `Operation not permitted`，只出自两处：写 `/tmp/DebugFreezeTest.java`；测试里起本地服务（`JevDecisionClientTest.start:57 » Socket Operation not permitted`，以及 python `bind failed: [Errno 1]`）。没有网络被拒（`403`、`CONNECT tunnel failed`）的记录 |
-| S2 | sandbox-runtime 的 `network.allowLocalBinding`（可选布尔）在 macOS 生成 `(allow network-bind (local ip "localhost:*"))` 及同范围的 inbound / outbound 规则（`macos-sandbox-utils.js`）；不开时 Seatbelt `deny default`，任何 bind 都被拒 |
+| S2 | sandbox-runtime 的 `network.allowLocalBinding`（可选布尔）在 macOS 生成 `(allow network-bind (local ip "localhost:*"))` 及同范围的 inbound / outbound 规则（`macos-sandbox-utils.js`）；不开时 Seatbelt `deny default`，任何 bind 都被拒。**实测（2026-11-04）Seatbelt 的 `localhost` 指本机所有地址**：开启后绑 `127.0.0.1`、`0.0.0.0`、局域网 IP 都成功；沙箱里绑 `0.0.0.0` 的服务从局域网 IP 可连入；出站只到本机地址（本机局域网 IP 可达，网关 `192.168.31.1` 不可达）。0.0.26 没有更细的开关，也不接受自定义 Seatbelt 规则 |
+| S6 | macOS 上 sandbox-runtime 在有写限制时**自动放行 `$TMPDIR` 的上级目录**（`/var/folders/XX/YYY`，`getTmpdirParentIfMacOSPattern`），与策略无关；放在那里的仓库对 lane 整体可写 |
 | S3 | Linux 上 sandbox-runtime 用 `bwrap --unshare-net`，网络在独立命名空间里，外网只能走 socat 桥到代理；`allowLocalBinding` 不出现在 `linux-sandbox-utils.js`。命名空间内的 loopback 本来可用，宿主机 `localhost` 上的服务够不着。**未实测** |
 | S4 | sandbox-runtime 里 `denyWrite` 优先于 `allowWrite`：放行 `/tmp` 后若再禁写其中的仓库，lane 自己要写的 worktree 与 git 部分也一并被禁，没法再放回来 |
 | S5 | macOS 的 `/tmp` 是指向 `/private/tmp` 的软链；守卫比较路径前会解析软链，策略里应写真实路径 |
@@ -27,14 +28,14 @@
 
 ## Decisions
 
-### D1 `localhost` 端口一律放开，不设开关
+### D1 本机端口一律放开，不设开关
 
 策略文件新增 `allowLocalBinding: true`，lane-guard 原样传给 `SandboxManager.initialize({ network: { allowedDomains, deniedDomains: [], allowLocalBinding } })`。`loadPolicy` 接受这个可选布尔；旧策略文件没有这个字段时按 `false` 处理（与现在行为一致）。
 
 - **备选：`launch --allow-local-ports` 按需打开。** 否决：起本地服务的测试很常见（S1 的就是普通单元测试），派发时用户无从预判哪个 change 会需要，结果只是把卡点从运行时挪到派发时。
 - **备选：只放 bind 不放 outbound。** 否决：测试要连自己起的服务，S2 的三条规则本来就是一组。
 
-代价写进文档：lane 能连本机 `localhost` 上开着的服务（本地数据库、模型服务等）。
+代价写进文档：lane 能连本机上开着的服务（本地数据库、模型服务等）；lane 里绑 `0.0.0.0` 的测试服务在运行期间局域网可达（S2，用户 2026-11-04 确认接受；开着 macOS 防火墙时由防火墙拦）。
 
 ### D2 `/tmp` 按真实路径放行；仓库在 `/tmp` 下时不放
 
@@ -51,7 +52,9 @@
 
 ## Risks / Trade-offs
 
-- [lane 能连本机 `localhost` 服务（含本地数据库），可读写其中数据] → 文档写明；外网仍只走包源白名单，数据出不了本机。
+- [lane 能连本机上的服务（含本地数据库），可读写其中数据] → 文档写明；连别的主机仍只走包源白名单。
+- [lane 里绑 `0.0.0.0` 的服务运行期间局域网可达（S2）] → 用户接受；文档写明，提示开 macOS 防火墙。
+- [仓库放在 `$TMPDIR`（`/var/folders/...`）下时整体对 lane 可写（S6，sandbox-runtime 既有行为）] → 文档写明"不要把要派发的仓库放在 `/tmp` 或 `$TMPDIR` 下"。
 - [lane 能改删其他程序放在 `/tmp` 的文件] → `/tmp` 本来就是共享且全员可写的；文档写明。
 - [其他仓库的 lane worktree 恰好在 `/tmp` 下时，本 lane 可写到它] → 只检查本仓库的三个路径；这种布局只出现在实验里，文档写明"不要把要派发的仓库放在 `/tmp`"。
 - [Linux 上行为与 macOS 不同（S3）] → 列入 known-behaviors 的未验证项。
